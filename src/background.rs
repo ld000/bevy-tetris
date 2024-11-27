@@ -1,283 +1,203 @@
+use bevy::asset::Assets;
 use bevy::color::palettes::css::{BLACK, WHITE_SMOKE};
 use bevy::color::Color;
-use bevy::prelude::{BuildChildren, Camera2d, ChildBuild, Commands, Text};
-use bevy::text::{TextColor, TextFont};
-use bevy::ui::{
-    AlignItems, BackgroundColor, BorderColor, BoxShadow, Display, FlexDirection, JustifyContent,
-    Node, PositionType, UiRect, Val,
+use bevy::prelude::{
+    BuildChildren, Camera2d, ChildBuild, Commands, Mesh, Mesh2d, Query, Rectangle, ResMut, Text,
+    Transform, With,
 };
+use bevy::sprite::{ColorMaterial, MeshMaterial2d};
+use bevy::text::{TextColor, TextFont};
+use bevy::ui::{AlignItems, BorderColor, Display, JustifyContent, Node, PositionType, UiRect, Val};
 use bevy::utils::default;
+use bevy::window::{PrimaryWindow, Window};
 
 const MAIN_COLOR: Color = Color::srgb(62.0 / 255.0, 209.0 / 255.0, 185.0 / 255.0);
-const INSET_BOX_SHADOW: BoxShadow = BoxShadow {
-    color: MAIN_COLOR,
-    x_offset: Val::Px(0.0),
-    y_offset: Val::Px(0.0),
-    spread_radius: Val::Px(1.0),
-    blur_radius: Val::Px(1.0),
-};
+const INNER_WINDOW_COLOR: Color = Color::srgb(0.0, 0.0, 0.0);
 
-const BORDER_PX: f32 = 8.0;
-const SINGLE_GRID_PX: f32 = 25.0;
-const GRID_WIDTH_BASE_PX: f32 = SINGLE_GRID_PX * 10.0;
-const GRID_HEIGHT_BASE_PX: f32 = SINGLE_GRID_PX * 20.0;
-const GRID_WIDTH_PX: f32 = GRID_WIDTH_BASE_PX + 2.0 * BORDER_PX;
-const GRID_HEIGHT_PX: f32 = GRID_HEIGHT_BASE_PX + 2.0 * BORDER_PX;
-const GRID_LINE_WIDTH_PX: f32 = 1.0;
+const BORDER_WIDTH: f32 = 8.0;
+const SINGLE_GRID_SIZE: f32 = 25.0;
+const GRID_WIDTH: f32 = SINGLE_GRID_SIZE * 10.0;
+const GRID_HEIGHT: f32 = SINGLE_GRID_SIZE * 20.0;
+const CENTER_BOX_WIDTH: f32 = GRID_WIDTH;
+const CENTER_BOX_HEIGHT: f32 = GRID_HEIGHT + 2.0 * BORDER_WIDTH;
 
 const TITLE_FONT_SIZE: f32 = 15.0;
+const TEXT_BOX_HEIGHT: f32 = 30.0;
 
-const SIDE_WIDTH_PX: f32 = 80.0;
-const INNER_BOX_WIDTH_PX: f32 = SIDE_WIDTH_PX - 2.0 * BORDER_PX;
-const HOLD_HEIGHT_PX: f32 = 80.0;
-const NEXT_HEIGHT_PX: f32 = 200.0;
-const SCORE_HEIGHT_PX: f32 = 150.0;
+const SIDE_BOX_WIDTH: f32 = 80.0;
+const SIDE_INNER_BOX_WIDTH: f32 = SIDE_BOX_WIDTH - 2.0 * BORDER_WIDTH;
+const HOLD_BOX_HEIGHT: f32 = 80.0;
+const NEXT_BOX_HEIGHT: f32 = 200.0;
+const SCORE_BOX_HEIGHT: f32 = 220.0;
 
-pub fn setup_screen(mut commands: Commands) {
-    commands.spawn(Camera2d);
+pub fn setup_background(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+    window_query: Query<&Window, With<PrimaryWindow>>,
+) {
+    spawn_camera(&mut commands);
+    spawn_background(&mut commands, &mut meshes, &mut materials, window_query);
+}
+
+fn spawn_title(commands: &mut Commands, title: &str, top: f32, left: f32) {
     commands
         .spawn((
             Node {
-                width: Val::Percent(100.0),
-                height: Val::Percent(100.0),
+                width: Val::Px(SIDE_BOX_WIDTH),
+                height: Val::Px(TEXT_BOX_HEIGHT),
+                position_type: PositionType::Absolute,
+                top: Val::Px(top),
+                left: Val::Px(left),
                 display: Display::Flex,
-                justify_content: JustifyContent::Center,
                 align_items: AlignItems::Center,
+                justify_content: JustifyContent::SpaceAround,
+                border: UiRect::all(Val::Px(1.0)), // for test
                 ..default()
             },
-            BackgroundColor(WHITE_SMOKE.into()),
+            BorderColor(WHITE_SMOKE.into()), // for test
         ))
-        .with_children(|main| {
-            main.spawn((
-                Node {
-                    // width: Val::Percent(100.0),
-                    // height: Val::Percent(100.0),
-                    margin: UiRect {
-                        top: Val::Px(50.0),
-                        ..default()
-                    },
-                    display: Display::Flex,
-                    justify_content: JustifyContent::Center,
-                    align_items: AlignItems::Start,
-                    flex_direction: FlexDirection::Row,
+        .with_children(|text_node| {
+            text_node.spawn((
+                Text::new(title),
+                TextColor(BLACK.into()),
+                TextFont {
+                    font_size: TITLE_FONT_SIZE,
                     ..default()
                 },
-                BackgroundColor(WHITE_SMOKE.into()),
-            ))
-            .with_children(|main_center| {
-                // left
-                main_center
-                    .spawn((
-                        Node {
-                            // width: Val::Px(SIDE_WIDTH_PX),
-                            margin: UiRect {
-                                // right: Val::Px(-BORDER_PX),
-                                bottom: Val::Px(BORDER_PX),
-                                ..default()
-                            },
-                            display: Display::Flex,
-                            align_items: AlignItems::Center,
-                            flex_direction: FlexDirection::Column,
-                            ..default()
-                        },
-                        BackgroundColor(MAIN_COLOR),
-                    ))
-                    .with_children(|left| {
-                        left.spawn((
-                            Node {
-                                // width: Val::Px(SIDE_WIDTH_PX),
-                                margin: UiRect {
-                                    // left: Val::Px(-BORDER_PX),
-                                    left: Val::Px(BORDER_PX),
-                                    bottom: Val::Px(BORDER_PX),
-                                    ..default()
-                                },
-                                display: Display::Flex,
-                                align_items: AlignItems::Center,
-                                flex_direction: FlexDirection::Column,
-                                ..default()
-                            },
-                            BackgroundColor(MAIN_COLOR),
-                        ))
-                        .with_children(|left_hold| {
-                            left_hold.spawn((
-                                Text::new("HOLD"),
-                                TextColor(BLACK.into()),
-                                TextFont {
-                                    font_size: TITLE_FONT_SIZE,
-                                    ..default()
-                                },
-                            ));
-                            left_hold.spawn((
-                                Node {
-                                    width: Val::Px(INNER_BOX_WIDTH_PX),
-                                    height: Val::Px(HOLD_HEIGHT_PX),
-                                    // margin: UiRect {
-                                    //     bottom: Val::Px(BORDER_PX),
-                                    //     ..default()
-                                    // },
-                                    ..default()
-                                },
-                                BackgroundColor(BLACK.into()),
-                                INSET_BOX_SHADOW,
-                            ));
-                        });
-                    });
-                // grid
-                main_center
-                    .spawn((
-                        Node {
-                            width: Val::Px(GRID_WIDTH_PX),
-                            height: Val::Px(GRID_HEIGHT_PX),
-                            border: UiRect::all(Val::Px(BORDER_PX)),
-                            display: Display::Flex,
-                            flex_direction: FlexDirection::Column,
-                            position_type: PositionType::Relative,
-                            ..default()
-                        },
-                        BorderColor(MAIN_COLOR),
-                        BackgroundColor(BLACK.into()),
-                    ))
-                    .with_children(|grid| {
-                        (0..19).for_each(|i| {
-                            grid.spawn((
-                                Node {
-                                    width: Val::Px(GRID_WIDTH_BASE_PX),
-                                    border: UiRect {
-                                        top: Val::Px(GRID_LINE_WIDTH_PX),
-                                        ..default()
-                                    },
-                                    margin: UiRect {
-                                        top: Val::Px(SINGLE_GRID_PX - GRID_LINE_WIDTH_PX),
-                                        ..default()
-                                    },
-                                    position_type: PositionType::Absolute,
-                                    top: Val::Px(SINGLE_GRID_PX * i as f32),
-                                    ..default()
-                                },
-                                BorderColor(WHITE_SMOKE.into()),
-                            ));
-                        });
-                        (1..10).for_each(|i| {
-                            grid.spawn((
-                                Node {
-                                    height: Val::Px(GRID_HEIGHT_BASE_PX),
-                                    border: UiRect {
-                                        right: Val::Px(GRID_LINE_WIDTH_PX),
-                                        ..default()
-                                    },
-                                    margin: UiRect {
-                                        right: Val::Px(SINGLE_GRID_PX - GRID_LINE_WIDTH_PX),
-                                        ..default()
-                                    },
-                                    position_type: PositionType::Absolute,
-                                    left: Val::Px(SINGLE_GRID_PX * i as f32),
-                                    ..default()
-                                },
-                                BorderColor(WHITE_SMOKE.into()),
-                            ));
-                        });
-                    });
-                // right
-                main_center
-                    .spawn((
-                        Node {
-                            // width: Val::Px(SIDE_WIDTH_PX),
-                            height: Val::Px(GRID_HEIGHT_PX),
-                            // margin: UiRect {
-                            //     left: Val::Px(-BORDER_PX),
-                            //     ..default()
-                            // },
-                            display: Display::Flex,
-                            justify_content: JustifyContent::SpaceBetween,
-                            align_items: AlignItems::Center,
-                            flex_direction: FlexDirection::Column,
-                            ..default()
-                        },
-                        BackgroundColor(MAIN_COLOR),
-                    ))
-                    .with_children(|right| {
-                        right
-                            .spawn((
-                                Node {
-                                    // width: Val::Px(SIDE_WIDTH_PX),
-                                    margin: UiRect {
-                                        // left: Val::Px(-BORDER_PX),
-                                        right: Val::Px(BORDER_PX),
-                                        bottom: Val::Px(BORDER_PX),
-                                        ..default()
-                                    },
-                                    display: Display::Flex,
-                                    align_items: AlignItems::Center,
-                                    flex_direction: FlexDirection::Column,
-                                    ..default()
-                                },
-                                BackgroundColor(MAIN_COLOR),
-                            ))
-                            .with_children(|right_next| {
-                                right_next.spawn((
-                                    Text::new("NEXT"),
-                                    TextColor(BLACK.into()),
-                                    TextFont {
-                                        font_size: TITLE_FONT_SIZE,
-                                        ..default()
-                                    },
-                                ));
-                                right_next.spawn((
-                                    Node {
-                                        width: Val::Px(INNER_BOX_WIDTH_PX),
-                                        height: Val::Px(NEXT_HEIGHT_PX),
-                                        // margin: UiRect {
-                                        //     bottom: Val::Px(BORDER_PX),
-                                        //     ..default()
-                                        // },
-                                        ..default()
-                                    },
-                                    BackgroundColor(BLACK.into()),
-                                    INSET_BOX_SHADOW,
-                                ));
-                            });
-                        right
-                            .spawn((
-                                Node {
-                                    // width: Val::Px(SIDE_WIDTH_PX),
-                                    margin: UiRect {
-                                        // left: Val::Px(-BORDER_PX),
-                                        right: Val::Px(BORDER_PX),
-                                        bottom: Val::Px(BORDER_PX),
-                                        ..default()
-                                    },
-                                    display: Display::Flex,
-                                    align_items: AlignItems::Center,
-                                    flex_direction: FlexDirection::Column,
-                                    ..default()
-                                },
-                                BackgroundColor(MAIN_COLOR),
-                            ))
-                            .with_children(|right_score| {
-                                right_score.spawn((
-                                    Text::new("SCORE"),
-                                    TextColor(BLACK.into()),
-                                    TextFont {
-                                        font_size: TITLE_FONT_SIZE,
-                                        ..default()
-                                    },
-                                ));
-                                right_score.spawn((
-                                    Node {
-                                        width: Val::Px(INNER_BOX_WIDTH_PX),
-                                        height: Val::Px(SCORE_HEIGHT_PX),
-                                        // margin: UiRect {
-                                        //     bottom: Val::Px(BORDER_PX),
-                                        //     ..default()
-                                        // },
-                                        ..default()
-                                    },
-                                    BackgroundColor(BLACK.into()),
-                                    INSET_BOX_SHADOW,
-                                ));
-                            });
-                    });
-            });
+            ));
         });
+}
+
+fn spawn_camera(commands: &mut Commands) {
+    commands.spawn(Camera2d);
+}
+
+fn spawn_background(
+    commands: &mut Commands,
+    meshes: &mut ResMut<Assets<Mesh>>,
+    materials: &mut ResMut<Assets<ColorMaterial>>,
+    window_query: Query<&Window, With<PrimaryWindow>>,
+) {
+    let window = window_query.single();
+
+    // center
+    commands
+        .spawn((
+            Mesh2d(meshes.add(Rectangle::new(CENTER_BOX_WIDTH, CENTER_BOX_HEIGHT))),
+            MeshMaterial2d(materials.add(MAIN_COLOR)),
+        ))
+        .with_children(|center| {
+            center
+                .spawn((
+                    Mesh2d(meshes.add(Rectangle::new(GRID_WIDTH, GRID_HEIGHT))),
+                    MeshMaterial2d(materials.add(INNER_WINDOW_COLOR)),
+                    Transform::from_xyz(0.0, 0.0, 0.1),
+                ))
+                // .with_children(|center_grid| {
+                //     let line = Segment2d::new(
+                //         Dir2::from_xy(-GRID_WIDTH / 2.0 + SINGLE_GRID_SIZE, -GRID_HEIGHT / 2.0)
+                //             .unwrap(),
+                //         GRID_HEIGHT,
+                //     );
+
+                //     // (0..19).for_each(|i| {
+                //     //     center_grid.spawn((
+                //     //         Mesh2d(
+                //     //             meshes.add(),
+                //     //         ),
+                //     //         MeshMaterial2d(materials.add(Color::WHITE)),
+                //     //     ));
+                //     // });
+                //     // (1..10).for_each(|i| {
+                //     //     center_grid.spawn((
+                //     //         Mesh2d(meshes.add(Rectangle::new(GRID_LINE_WIDTH_PX, GRID_HEIGHT_BASE_PX))),
+                //     //         MeshMaterial2d(materials.add(WHITE_SMOKE)),
+                //     //     ));
+                // })
+                ;
+        });
+
+    // left
+    commands
+        .spawn((
+            Mesh2d(meshes.add(Rectangle::new(SIDE_BOX_WIDTH, CENTER_BOX_HEIGHT))),
+            MeshMaterial2d(materials.add(MAIN_COLOR)),
+            Transform::from_xyz(-(CENTER_BOX_WIDTH / 2.0 + SIDE_BOX_WIDTH / 2.0), 0.0, 0.0),
+        ))
+        .with_children(|left| {
+            // left.spawn((
+            //     Text::new("HOLD"),
+            //     TextColor(BLACK.into()),
+            //     TextFont {
+            //         font_size: TITLE_FONT_SIZE,
+            //         ..default()
+            //     },
+            //     // Transform::from_xyz(-(GRID_WIDTH_PX / 2.0 + SIDE_WIDTH_PX / 2.0), 0.0, 0.0),
+            // ));
+            left.spawn((
+                Mesh2d(meshes.add(Rectangle::new(SIDE_INNER_BOX_WIDTH, HOLD_BOX_HEIGHT))),
+                MeshMaterial2d(materials.add(INNER_WINDOW_COLOR)),
+                Transform::from_xyz(
+                    0.0,
+                    CENTER_BOX_HEIGHT / 2.0
+                        - HOLD_BOX_HEIGHT / 2.0
+                        - BORDER_WIDTH
+                        - TEXT_BOX_HEIGHT,
+                    0.1,
+                ),
+            ));
+        });
+    spawn_title(
+        commands,
+        "HOLD",
+        window.height() / 2.0 - CENTER_BOX_HEIGHT / 2.0 + BORDER_WIDTH,
+        window.width() / 2.0 - CENTER_BOX_WIDTH / 2.0 - SIDE_BOX_WIDTH,
+    );
+
+    // right
+    commands
+        .spawn((
+            Mesh2d(meshes.add(Rectangle::new(SIDE_BOX_WIDTH, CENTER_BOX_HEIGHT))),
+            MeshMaterial2d(materials.add(MAIN_COLOR)),
+            Transform::from_xyz(CENTER_BOX_WIDTH / 2.0 + SIDE_BOX_WIDTH / 2.0, 0.0, 0.0),
+        ))
+        .with_children(|right| {
+            right.spawn((
+                Mesh2d(meshes.add(Rectangle::new(SIDE_INNER_BOX_WIDTH, NEXT_BOX_HEIGHT))),
+                MeshMaterial2d(materials.add(INNER_WINDOW_COLOR)),
+                Transform::from_xyz(
+                    0.0,
+                    CENTER_BOX_HEIGHT / 2.0
+                        - NEXT_BOX_HEIGHT / 2.0
+                        - BORDER_WIDTH
+                        - TEXT_BOX_HEIGHT,
+                    0.1,
+                ),
+            ));
+            right.spawn((
+                Mesh2d(meshes.add(Rectangle::new(SIDE_INNER_BOX_WIDTH, SCORE_BOX_HEIGHT))),
+                MeshMaterial2d(materials.add(INNER_WINDOW_COLOR)),
+                Transform::from_xyz(
+                    0.0,
+                    -CENTER_BOX_HEIGHT / 2.0 + SCORE_BOX_HEIGHT / 2.0 + BORDER_WIDTH,
+                    0.1,
+                ),
+            ));
+        });
+    spawn_title(
+        commands,
+        "NEXT",
+        window.height() / 2.0 - CENTER_BOX_HEIGHT / 2.0 + BORDER_WIDTH,
+        window.width() / 2.0 + CENTER_BOX_WIDTH / 2.0,
+    );
+    spawn_title(
+        commands,
+        "SCORE",
+        window.height() / 2.0 + CENTER_BOX_HEIGHT / 2.0
+            - SCORE_BOX_HEIGHT
+            - BORDER_WIDTH
+            - TEXT_BOX_HEIGHT,
+        window.width() / 2.0 + CENTER_BOX_WIDTH / 2.0,
+    );
 }

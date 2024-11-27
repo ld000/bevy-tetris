@@ -6,7 +6,7 @@ use bevy::color::{Color, Gray, LinearRgba};
 use bevy::input::ButtonInput;
 use bevy::math::{Isometry2d, UVec2, Vec2, Vec3};
 #[cfg(feature = "bevy_dev_tools")]
-use bevy::prelude::info_once;
+use bevy::prelude::{info_once, ResMut};
 use bevy::prelude::{
     BuildChildren, ChildBuild, Children, Commands, Entity, Gizmos, KeyCode, PluginGroup, Query,
     Res, Resource, Transform, With,
@@ -103,12 +103,14 @@ fn block_gizmos(gizmos: &mut Gizmos, transform_x: f32) {
         Vec2::new(100.0, 100.0),
         LinearRgba::gray(0.3),
     );
-    gizmos.grid_2d(
-        Isometry2d::from_translation(Vec2::new(transform_x, 0.0)),
-        UVec2::new(4, 4),
-        Vec2::new(25.0, 25.0),
-        LinearRgba::gray(0.05),
-    );
+    gizmos
+        .grid_2d(
+            Isometry2d::from_translation(Vec2::new(transform_x, 0.0)),
+            UVec2::new(4, 4),
+            Vec2::new(25.0, 25.0),
+            LinearRgba::gray(0.05),
+        )
+        .outer_edges();
 }
 
 fn rotation_system(

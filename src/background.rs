@@ -37,7 +37,7 @@ pub fn setup_background(
     window_query: Query<&Window, With<PrimaryWindow>>,
 ) {
     spawn_camera(&mut commands);
-    spawn_background(&mut commands, &mut meshes, &mut materials, window_query);
+    // spawn_background(&mut commands, &mut meshes, &mut materials, window_query);
 }
 
 fn spawn_title(commands: &mut Commands, title: &str, top: f32, left: f32) {

@@ -1,9 +1,10 @@
 use bevy::asset::Assets;
 use bevy::color::palettes::css::{BLACK, WHITE_SMOKE};
-use bevy::color::Color;
+use bevy::color::{Color, Gray, LinearRgba};
+use bevy::math::{Isometry3d, UVec2, Vec2, Vec3};
 use bevy::prelude::{
-    BuildChildren, Camera2d, ChildBuild, Commands, Mesh, Mesh2d, Query, Rectangle, ResMut, Text,
-    Transform, With,
+    BuildChildren, Camera2d, ChildBuild, Commands, Gizmos, Mesh, Mesh2d, Query, Rectangle, ResMut,
+    Text, Transform, With,
 };
 use bevy::sprite::{ColorMaterial, MeshMaterial2d};
 use bevy::text::{TextColor, TextFont};
@@ -37,36 +38,16 @@ pub fn setup_background(
     window_query: Query<&Window, With<PrimaryWindow>>,
 ) {
     spawn_camera(&mut commands);
-    // spawn_background(&mut commands, &mut meshes, &mut materials, window_query);
+    spawn_background(&mut commands, &mut meshes, &mut materials, window_query);
 }
 
-fn spawn_title(commands: &mut Commands, title: &str, top: f32, left: f32) {
-    commands
-        .spawn((
-            Node {
-                width: Val::Px(SIDE_BOX_WIDTH),
-                height: Val::Px(TEXT_BOX_HEIGHT),
-                position_type: PositionType::Absolute,
-                top: Val::Px(top),
-                left: Val::Px(left),
-                display: Display::Flex,
-                align_items: AlignItems::Center,
-                justify_content: JustifyContent::SpaceAround,
-                border: UiRect::all(Val::Px(1.0)), // for test
-                ..default()
-            },
-            BorderColor(WHITE_SMOKE.into()), // for test
-        ))
-        .with_children(|text_node| {
-            text_node.spawn((
-                Text::new(title),
-                TextColor(BLACK.into()),
-                TextFont {
-                    font_size: TITLE_FONT_SIZE,
-                    ..default()
-                },
-            ));
-        });
+pub fn setup_background_grid(mut gizmos: Gizmos) {
+    gizmos.grid(
+        Isometry3d::from_translation(Vec3::new(0.0, 0.0, 1.0)),
+        UVec2::new(10, 20),
+        Vec2::new(25.0, 25.0),
+        LinearRgba::gray(0.05),
+    );
 }
 
 fn spawn_camera(commands: &mut Commands) {
@@ -200,4 +181,33 @@ fn spawn_background(
             - TEXT_BOX_HEIGHT,
         window.width() / 2.0 + CENTER_BOX_WIDTH / 2.0,
     );
+}
+
+fn spawn_title(commands: &mut Commands, title: &str, top: f32, left: f32) {
+    commands
+        .spawn((
+            Node {
+                width: Val::Px(SIDE_BOX_WIDTH),
+                height: Val::Px(TEXT_BOX_HEIGHT),
+                position_type: PositionType::Absolute,
+                top: Val::Px(top),
+                left: Val::Px(left),
+                display: Display::Flex,
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::SpaceAround,
+                border: UiRect::all(Val::Px(1.0)), // for test
+                ..default()
+            },
+            BorderColor(WHITE_SMOKE.into()), // for test
+        ))
+        .with_children(|text_node| {
+            text_node.spawn((
+                Text::new(title),
+                TextColor(BLACK.into()),
+                TextFont {
+                    font_size: TITLE_FONT_SIZE,
+                    ..default()
+                },
+            ));
+        });
 }

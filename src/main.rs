@@ -4,15 +4,15 @@ mod tetromino;
 use bevy::app::{PreStartup, Startup, Update};
 use bevy::color::{Color, Gray, LinearRgba};
 use bevy::input::ButtonInput;
-use bevy::math::{Isometry2d, UVec2, Vec2, Vec3};
+use bevy::math::{Isometry3d, UVec2, Vec2, Vec3};
 #[cfg(feature = "bevy_dev_tools")]
-use bevy::prelude::{info_once, ResMut};
+use bevy::prelude::info_once;
 use bevy::prelude::{
-    BuildChildren, ChildBuild, Children, Commands, Entity, Gizmos, KeyCode, PluginGroup, Query,
-    Res, Resource, Transform, With,
+    BuildChildren, ChildBuild, Children, Commands, Component, Entity, Gizmos, KeyCode, PluginGroup,
+    Query, Res, ResMut, Resource, Transform, With,
 };
 use bevy::sprite::Sprite;
-use bevy::time::{Timer, TimerMode};
+use bevy::time::{Time, Timer, TimerMode};
 use bevy::utils::default;
 use bevy::window::Window;
 use bevy::{app::App, window::WindowPlugin, DefaultPlugins};
@@ -30,9 +30,12 @@ fn main() {
     }))
     .insert_resource(GameData::default())
     .add_systems(PreStartup, background::setup_background)
+    .add_systems(Update, background::setup_background_grid)
     .add_systems(Startup, test_block)
-    .add_systems(Update, spawn_block_gizmos)
-    .add_systems(Update, rotation_system);
+    .add_systems(Update, spawn_test_block_gizmos)
+    .add_systems(Startup, spawn_block)
+    .add_systems(Update, (rotation_system, block_movement_system))
+    .add_systems(Update, block_falling_system);
 
     #[cfg(feature = "bevy_dev_tools")]
     {
@@ -43,17 +46,64 @@ fn main() {
     app.run();
 }
 
-fn test_block(mut commands: Commands) {
-    spawn_tetromino(&mut commands, tetromino::Tetromino::new_i(), -300.0);
-    spawn_tetromino(&mut commands, tetromino::Tetromino::new_o(), -200.0);
-    spawn_tetromino(&mut commands, tetromino::Tetromino::new_t(), -100.0);
-    spawn_tetromino(&mut commands, tetromino::Tetromino::new_s(), 0.0);
-    spawn_tetromino(&mut commands, tetromino::Tetromino::new_z(), 100.0);
-    spawn_tetromino(&mut commands, tetromino::Tetromino::new_j(), 200.0);
-    spawn_tetromino(&mut commands, tetromino::Tetromino::new_l(), 300.0);
+#[derive(Component)]
+struct ActiveBlock;
+
+fn spawn_block(mut commands: Commands) {
+    let tetromino = tetromino::Tetromino::new_i();
+    let mut transform_y_times: f32 = 8.0;
+    if let tetromino::Tetromino::I { .. } = tetromino {
+        transform_y_times = 9.0
+    };
+
+    spawn_tetromino(&mut commands, tetromino, 0.0, 25.0 * transform_y_times);
 }
 
-fn spawn_tetromino(commands: &mut Commands, tetromino: tetromino::Tetromino, transform_x: f32) {
+fn block_falling_system(
+    mut query: Query<(Entity, &mut Transform), With<ActiveBlock>>,
+    time: Res<Time>,
+    mut game_data: ResMut<GameData>,
+) {
+    let finished = game_data.falling_timer.tick(time.delta()).finished();
+    if !finished {
+        return;
+    }
+
+    for (entity, mut transform) in query.iter_mut() {
+        transform.translation.y -= 25.0;
+    }
+}
+
+fn block_movement_system(
+    mut query: Query<&mut Transform, With<ActiveBlock>>,
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+) {
+    for mut transform in query.iter_mut() {
+        if keyboard_input.just_pressed(KeyCode::ArrowLeft) {
+            transform.translation.x -= 25.0;
+        }
+        if keyboard_input.just_pressed(KeyCode::ArrowRight) {
+            transform.translation.x += 25.0;
+        }
+    }
+}
+
+fn test_block(mut commands: Commands) {
+    spawn_tetromino(&mut commands, tetromino::Tetromino::new_i(), -300.0, 0.0);
+    spawn_tetromino(&mut commands, tetromino::Tetromino::new_o(), -200.0, 0.0);
+    spawn_tetromino(&mut commands, tetromino::Tetromino::new_t(), -100.0, 0.0);
+    spawn_tetromino(&mut commands, tetromino::Tetromino::new_s(), 0.0, 0.0);
+    spawn_tetromino(&mut commands, tetromino::Tetromino::new_z(), 100.0, 0.0);
+    spawn_tetromino(&mut commands, tetromino::Tetromino::new_j(), 200.0, 0.0);
+    spawn_tetromino(&mut commands, tetromino::Tetromino::new_l(), 300.0, 0.0);
+}
+
+fn spawn_tetromino(
+    commands: &mut Commands,
+    tetromino: tetromino::Tetromino,
+    transform_x: f32,
+    transform_y: f32,
+) {
     let dots: [tetromino::Dot; 4] = tetromino.dots_by_state();
     let color: Color = tetromino.color();
 
@@ -64,11 +114,12 @@ fn spawn_tetromino(commands: &mut Commands, tetromino: tetromino::Tetromino, tra
                 ..default()
             },
             Transform {
-                translation: Vec3::new(-25.0 * 1.5 + transform_x, 25.0 * 1.5, 1.0),
+                translation: Vec3::new(-25.0 * 1.5 + transform_x, 25.0 * 1.5 + transform_y, 1.0),
                 ..default()
             },
             tetromino,
             tetromino::Rotation {},
+            ActiveBlock,
         ))
         .with_children(|parent| {
             for dot in dots.iter() {
@@ -87,7 +138,7 @@ fn spawn_tetromino(commands: &mut Commands, tetromino: tetromino::Tetromino, tra
         });
 }
 
-fn spawn_block_gizmos(mut gizmos: Gizmos) {
+fn spawn_test_block_gizmos(mut gizmos: Gizmos) {
     block_gizmos(&mut gizmos, -300.0);
     block_gizmos(&mut gizmos, -200.0);
     block_gizmos(&mut gizmos, -100.0);
@@ -98,19 +149,18 @@ fn spawn_block_gizmos(mut gizmos: Gizmos) {
 }
 
 fn block_gizmos(gizmos: &mut Gizmos, transform_x: f32) {
-    gizmos.rect_2d(
-        Isometry2d::from_translation(Vec2::new(transform_x, 0.0)),
+    gizmos.rect(
+        Isometry3d::from_translation(Vec3::new(transform_x, 0.0, 1.0)),
         Vec2::new(100.0, 100.0),
         LinearRgba::gray(0.3),
     );
-    gizmos
-        .grid_2d(
-            Isometry2d::from_translation(Vec2::new(transform_x, 0.0)),
-            UVec2::new(4, 4),
-            Vec2::new(25.0, 25.0),
-            LinearRgba::gray(0.05),
-        )
-        .outer_edges();
+
+    gizmos.grid(
+        Isometry3d::from_translation(Vec3::new(transform_x, 0.0, 1.0)),
+        UVec2::new(4, 4),
+        Vec2::new(25.0, 25.0),
+        LinearRgba::gray(0.05),
+    );
 }
 
 fn rotation_system(

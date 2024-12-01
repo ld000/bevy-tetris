@@ -31,7 +31,7 @@ fn main() {
     .insert_resource(GameData::default())
     .add_systems(PreStartup, background::setup_background)
     .add_systems(Update, background::setup_background_grid)
-    .add_systems(Startup, test_block)
+    // .add_systems(Startup, test_block)
     .add_systems(Update, spawn_test_block_gizmos)
     .add_systems(Startup, spawn_block)
     .add_systems(Update, (rotation_system, block_movement_system))
@@ -50,9 +50,9 @@ fn main() {
 struct ActiveBlock;
 
 fn spawn_block(mut commands: Commands) {
-    let tetromino = tetromino::Tetromino::new_i();
+    let tetromino = tetromino::Block::new_t();
     let mut transform_y_times: f32 = 8.0;
-    if let tetromino::Tetromino::I { .. } = tetromino {
+    if let tetromino::Block::I { .. } = tetromino {
         transform_y_times = 9.0
     };
 
@@ -60,7 +60,7 @@ fn spawn_block(mut commands: Commands) {
 }
 
 fn block_falling_system(
-    mut query: Query<(Entity, &mut Transform), With<ActiveBlock>>,
+    mut query: Query<(&tetromino::Block, &mut Transform), With<ActiveBlock>>,
     time: Res<Time>,
     mut game_data: ResMut<GameData>,
 ) {
@@ -69,43 +69,63 @@ fn block_falling_system(
         return;
     }
 
-    for (entity, mut transform) in query.iter_mut() {
-        transform.translation.y -= 25.0;
+    for (block, mut transform) in query.iter_mut() {
+        let in_board = board_check_block_position(
+            transform.translation.x,
+            transform.translation.y - 25.0,
+            block,
+        );
+
+        if in_board {
+            transform.translation.y -= 25.0;
+        }
     }
 }
 
 fn block_movement_system(
-    mut query: Query<&mut Transform, With<ActiveBlock>>,
+    mut query: Query<(&tetromino::Block, &mut Transform), With<ActiveBlock>>,
     keyboard_input: Res<ButtonInput<KeyCode>>,
 ) {
-    for mut transform in query.iter_mut() {
+    for (block, mut transform) in query.iter_mut() {
+        let mut transform_x: f32 = 0.0;
+
         if keyboard_input.just_pressed(KeyCode::ArrowLeft) {
-            transform.translation.x -= 25.0;
+            transform_x = -25.0;
         }
         if keyboard_input.just_pressed(KeyCode::ArrowRight) {
-            transform.translation.x += 25.0;
+            transform_x = 25.0;
+        }
+
+        let in_board = board_check_block_position(
+            transform.translation.x + transform_x,
+            transform.translation.y,
+            block,
+        );
+
+        if in_board {
+            transform.translation.x += transform_x;
         }
     }
 }
 
 fn test_block(mut commands: Commands) {
-    spawn_tetromino(&mut commands, tetromino::Tetromino::new_i(), -300.0, 0.0);
-    spawn_tetromino(&mut commands, tetromino::Tetromino::new_o(), -200.0, 0.0);
-    spawn_tetromino(&mut commands, tetromino::Tetromino::new_t(), -100.0, 0.0);
-    spawn_tetromino(&mut commands, tetromino::Tetromino::new_s(), 0.0, 0.0);
-    spawn_tetromino(&mut commands, tetromino::Tetromino::new_z(), 100.0, 0.0);
-    spawn_tetromino(&mut commands, tetromino::Tetromino::new_j(), 200.0, 0.0);
-    spawn_tetromino(&mut commands, tetromino::Tetromino::new_l(), 300.0, 0.0);
+    spawn_tetromino(&mut commands, tetromino::Block::new_i(), -300.0, 0.0);
+    spawn_tetromino(&mut commands, tetromino::Block::new_o(), -200.0, 0.0);
+    spawn_tetromino(&mut commands, tetromino::Block::new_t(), -100.0, 0.0);
+    spawn_tetromino(&mut commands, tetromino::Block::new_s(), 0.0, 0.0);
+    spawn_tetromino(&mut commands, tetromino::Block::new_z(), 100.0, 0.0);
+    spawn_tetromino(&mut commands, tetromino::Block::new_j(), 200.0, 0.0);
+    spawn_tetromino(&mut commands, tetromino::Block::new_l(), 300.0, 0.0);
 }
 
 fn spawn_tetromino(
     commands: &mut Commands,
-    tetromino: tetromino::Tetromino,
+    block: tetromino::Block,
     transform_x: f32,
     transform_y: f32,
 ) {
-    let dots: [tetromino::Dot; 4] = tetromino.dots_by_state();
-    let color: Color = tetromino.color();
+    let dots: [tetromino::Dot; 4] = block.dots_by_state();
+    let color: Color = block.color();
 
     commands
         .spawn((
@@ -117,7 +137,7 @@ fn spawn_tetromino(
                 translation: Vec3::new(-25.0 * 1.5 + transform_x, 25.0 * 1.5 + transform_y, 1.0),
                 ..default()
             },
-            tetromino,
+            block,
             tetromino::Rotation {},
             ActiveBlock,
         ))
@@ -166,10 +186,7 @@ fn block_gizmos(gizmos: &mut Gizmos, transform_x: f32) {
 fn rotation_system(
     mut commands: Commands,
     keyboard_input: Res<ButtonInput<KeyCode>>,
-    mut block_query: Query<
-        (Entity, &Children, &mut tetromino::Tetromino),
-        With<tetromino::Rotation>,
-    >,
+    mut block_query: Query<(Entity, &Children, &mut tetromino::Block), With<tetromino::Rotation>>,
 ) {
     for (entity, children, mut tetromino) in block_query.iter_mut() {
         if keyboard_input.just_pressed(KeyCode::KeyE) {
@@ -207,7 +224,7 @@ const TIMER_FALLING_SECS: f32 = 1.0;
 
 #[derive(Resource)]
 struct GameData {
-    matrix: [[u8; 10]; 20],
+    board_matrix: [[Option<tetromino::Dot>; 10]; 20],
     keyboard_timer: Timer,
     falling_timer: Timer,
 }
@@ -215,11 +232,48 @@ struct GameData {
 impl Default for GameData {
     fn default() -> Self {
         Self {
-            matrix: [[0; 10]; 20],
+            board_matrix: [[None; 10]; 20],
             keyboard_timer: Timer::from_seconds(TIMER_KEYBOARD_SECS, TimerMode::Repeating),
             falling_timer: Timer::from_seconds(TIMER_FALLING_SECS, TimerMode::Repeating),
         }
     }
+}
+
+/// check if the block is in the board
+/// -----------------------------------
+/// | 0, 0 | 0, 1 | 0, 2 | ... | 0, 9 |
+/// | 1, 0 | 1, 1 | 1, 2 | ... | 1, 9 |
+/// | 2, 0 | 2, 1 | 2, 2 | ... | 2, 9 |
+/// | ...  | ...  | ...  | ... | ...  |
+/// | 19,0 | 19,1 | 19,2 | ... | 19,9 |
+/// -----------------------------------
+fn board_check_block_position(x: f32, y: f32, block: &tetromino::Block) -> bool {
+    let dots = block.dots_by_state();
+    // println!("--------------");
+    for dot in dots.iter() {
+        let mut board_x: i8 = if x < 0.0 {
+            (4.0 - (x.abs() / 25.0 - 0.5)) as i8
+        } else {
+            (5.0 + (x / 25.0 - 0.5)) as i8
+        };
+        board_x += dot.x;
+
+        let mut board_y: i8 = if y < 0.0 {
+            (10.0 + (y.abs() / 25.0 - 0.5)) as i8
+        } else {
+            (9.0 - (y / 25.0 - 0.5)) as i8
+        };
+        board_y += dot.y;
+
+        // println!("x: {}, y: {}", board_x, board_y);
+
+        if !(0..=9).contains(&board_x) || !(0..=19).contains(&board_y) {
+            return false;
+        }
+    }
+    // println!("--------------");
+
+    true
 }
 
 #[cfg(feature = "bevy_dev_tools")]

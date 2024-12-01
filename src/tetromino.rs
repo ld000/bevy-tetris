@@ -14,7 +14,7 @@ pub enum State {
 }
 
 #[derive(Component)]
-pub enum Tetromino {
+pub enum Block {
     I {
         dots: [[Dot; 4]; 4],
         state: State,
@@ -52,7 +52,7 @@ pub enum Tetromino {
     },
 }
 
-impl Tetromino {
+impl Block {
     fn state(&self) -> &State {
         match self {
             Self::I { state, .. } => state,
@@ -346,7 +346,7 @@ impl Tetromino {
 pub struct Rotation;
 
 impl Rotation {
-    pub fn rotate_right(tetromino: &mut Tetromino) {
+    pub fn rotate_right(tetromino: &mut Block) {
         match tetromino.state() {
             State::Zero => {
                 tetromino.set_state(State::One);
@@ -363,7 +363,7 @@ impl Rotation {
         }
     }
 
-    pub fn rotate_left(tetromino: &mut Tetromino) {
+    pub fn rotate_left(tetromino: &mut Block) {
         match tetromino.state() {
             State::Zero => {
                 tetromino.set_state(State::Three);

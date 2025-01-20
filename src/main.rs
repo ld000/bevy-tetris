@@ -8,8 +8,9 @@ use bevy::math::{Isometry3d, UVec2, Vec2, Vec3};
 #[cfg(feature = "bevy_dev_tools")]
 use bevy::prelude::info_once;
 use bevy::prelude::{
-    BuildChildren, ChildBuild, Children, Commands, Component, Entity, Gizmos, KeyCode, Mut,
-    PluginGroup, Query, Res, ResMut, Resource, Transform, With,
+    in_state, AppExtStates, BuildChildren, ChildBuild, Children, Commands, Component, Entity,
+    Gizmos, IntoSystemConfigs, KeyCode, Mut, NextState, PluginGroup, Query, Res, ResMut, Resource,
+    State, States, Transform, With,
 };
 use bevy::sprite::Sprite;
 use bevy::time::{Time, Timer, TimerMode};
@@ -34,10 +35,14 @@ fn main() {
     .add_systems(Update, background::setup_background_grid)
     // .add_systems(Startup, test_block)
     // .add_systems(Update, test_block_gizmos)
-    .init_resource::<Randomizer>()
+    .init_resource::<Randomizer7Bag>()
+    .init_state::<DropType>()
     .add_systems(Update, spawn_block_system)
-    .add_systems(Update, (rotation_system, block_movement_system))
-    .add_systems(Update, block_falling_system);
+    .add_systems(
+        Update,
+        (block_rotation_system, block_movement_system).run_if(in_state(DropType::Normal)),
+    )
+    .add_systems(Update, (block_drop_type_system, block_drop_system));
 
     #[cfg(feature = "bevy_dev_tools")]
     {
@@ -51,18 +56,18 @@ fn main() {
 #[derive(Component)]
 struct ActiveBlock;
 
+/// https://simon.lc/the-history-of-tetris-randomizers
 /// There are 3 main kinds of tetris being competitively played right now and they all play in very different ways:
 /// 1. NES Tetris has a no bag randomiser and the win condition for a match is getting a higher score than your opponent.
 /// 2. TGM has the system you talked about and the win condition for a match is finishing earlier than your opponent, similar to a speedrun race.
 /// 3. Guideline Tetris has the 7-bag we all know and its win condition is making your opponent top out through sending garbage.
-/// https://simon.lc/the-history-of-tetris-randomizers
 
 #[derive(Resource)]
-struct Randomizer {
+struct Randomizer7Bag {
     bag: Vec<tetromino::Block>,
 }
 
-impl Default for Randomizer {
+impl Default for Randomizer7Bag {
     fn default() -> Self {
         Self {
             bag: vec![
@@ -78,7 +83,7 @@ impl Default for Randomizer {
     }
 }
 
-impl Randomizer {
+impl Randomizer7Bag {
     fn init(&mut self) {
         self.bag = vec![
             tetromino::Block::new_i(),
@@ -92,7 +97,7 @@ impl Randomizer {
     }
 }
 
-fn block_randomizer_7bag(randomizer: &mut ResMut<Randomizer>) -> tetromino::Block {
+fn block_randomizer_7bag(randomizer: &mut ResMut<Randomizer7Bag>) -> tetromino::Block {
     if randomizer.bag.is_empty() {
         randomizer.init();
     }
@@ -104,7 +109,7 @@ fn block_randomizer_7bag(randomizer: &mut ResMut<Randomizer>) -> tetromino::Bloc
 
 fn spawn_block_system(
     mut commands: Commands,
-    mut randomizer: ResMut<Randomizer>,
+    mut randomizer: ResMut<Randomizer7Bag>,
     query: Query<Entity, With<ActiveBlock>>,
 ) {
     if query.iter().count() > 0 {
@@ -120,15 +125,46 @@ fn spawn_block_system(
     spawn_block(&mut commands, block, 0.0, 25.0 * transform_y_times);
 }
 
-fn block_falling_system(
+#[derive(States, Debug, Clone, Eq, PartialEq, Hash, Default)]
+enum DropType {
+    #[default]
+    Normal,
+    Hard,
+}
+
+fn block_drop_type_system(
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+    mut state: ResMut<NextState<DropType>>,
+    old_state: Res<State<DropType>>,
+    mut game_data: ResMut<GameData>,
+) {
+    if old_state.get() == &DropType::Hard {
+        return;
+    }
+    if keyboard_input.just_pressed(KeyCode::ArrowUp) {
+        state.set(DropType::Hard);
+        game_data.hard_drop_timer.reset();
+    }
+}
+
+fn block_drop_system(
     mut commands: Commands,
     mut query: Query<(Entity, &Children, &tetromino::Block, &mut Transform), With<ActiveBlock>>,
     time: Res<Time>,
+    state: Res<State<DropType>>,
     mut game_data: ResMut<GameData>,
+    mut next_state: ResMut<NextState<DropType>>,
 ) {
-    let finished = game_data.falling_timer.tick(time.delta()).finished();
-    if !finished {
-        return;
+    if state.get() == &DropType::Hard {
+        let finished = game_data.hard_drop_timer.tick(time.delta()).finished();
+        if !finished {
+            return;
+        }
+    } else {
+        let finished = game_data.drop_timer.tick(time.delta()).finished();
+        if !finished {
+            return;
+        }
     }
 
     for (entity, children, block, mut transform) in query.iter_mut() {
@@ -142,7 +178,7 @@ fn block_falling_system(
         if in_board {
             transform.translation.y -= 25.0;
         } else {
-            block_falling_done(
+            block_drop_done(
                 &mut commands,
                 &mut game_data,
                 entity,
@@ -150,6 +186,7 @@ fn block_falling_system(
                 block,
                 &transform,
             );
+            next_state.set(DropType::Normal);
         }
     }
 }
@@ -188,7 +225,7 @@ struct BoardDot {
     board_y: i8,
 }
 
-fn block_falling_done(
+fn block_drop_done(
     commands: &mut Commands,
     game_data: &mut ResMut<GameData>,
     entity: Entity,
@@ -226,22 +263,12 @@ fn block_falling_done(
             BoardDot { board_x, board_y },
         ));
 
-        dot_in_block(board_x, board_y, game_data);
+        dot_in_board(board_x, board_y, game_data);
     });
 }
 
-fn dot_in_block(board_x: i8, board_y: i8, game_data: &mut ResMut<GameData>) {
+fn dot_in_board(board_x: i8, board_y: i8, game_data: &mut ResMut<GameData>) {
     game_data.board_matrix[board_y as usize][board_x as usize] = 1;
-}
-
-fn test_block(mut commands: Commands) {
-    spawn_block(&mut commands, tetromino::Block::new_i(), -300.0, 0.0);
-    spawn_block(&mut commands, tetromino::Block::new_o(), -200.0, 0.0);
-    spawn_block(&mut commands, tetromino::Block::new_t(), -100.0, 0.0);
-    spawn_block(&mut commands, tetromino::Block::new_s(), 0.0, 0.0);
-    spawn_block(&mut commands, tetromino::Block::new_z(), 100.0, 0.0);
-    spawn_block(&mut commands, tetromino::Block::new_j(), 200.0, 0.0);
-    spawn_block(&mut commands, tetromino::Block::new_l(), 300.0, 0.0);
 }
 
 fn spawn_block(
@@ -284,6 +311,16 @@ fn spawn_block(
         });
 }
 
+fn test_block(mut commands: Commands) {
+    spawn_block(&mut commands, tetromino::Block::new_i(), -300.0, 0.0);
+    spawn_block(&mut commands, tetromino::Block::new_o(), -200.0, 0.0);
+    spawn_block(&mut commands, tetromino::Block::new_t(), -100.0, 0.0);
+    spawn_block(&mut commands, tetromino::Block::new_s(), 0.0, 0.0);
+    spawn_block(&mut commands, tetromino::Block::new_z(), 100.0, 0.0);
+    spawn_block(&mut commands, tetromino::Block::new_j(), 200.0, 0.0);
+    spawn_block(&mut commands, tetromino::Block::new_l(), 300.0, 0.0);
+}
+
 fn test_block_gizmos(mut gizmos: Gizmos) {
     block_gizmos(&mut gizmos, -300.0);
     block_gizmos(&mut gizmos, -200.0);
@@ -309,7 +346,7 @@ fn block_gizmos(gizmos: &mut Gizmos, transform_x: f32) {
     );
 }
 
-fn rotation_system(
+fn block_rotation_system(
     mut commands: Commands,
     keyboard_input: Res<ButtonInput<KeyCode>>,
     mut block_query: Query<(Entity, &Children, &mut tetromino::Block), With<tetromino::Rotation>>,
@@ -353,13 +390,15 @@ fn rotation_system(
 }
 
 const TIMER_KEYBOARD_SECS: f32 = 0.1;
-const TIMER_FALLING_SECS: f32 = 1.0;
+const TIMER_DROP_SECS: f32 = 1.0;
+const TIMER_HARD_DROP_SECS: f32 = 0.01;
 
 #[derive(Resource)]
 struct GameData {
     board_matrix: [[i8; 10]; 20],
     keyboard_timer: Timer,
-    falling_timer: Timer,
+    drop_timer: Timer,
+    hard_drop_timer: Timer,
 }
 
 impl Default for GameData {
@@ -367,7 +406,8 @@ impl Default for GameData {
         Self {
             board_matrix: [[0; 10]; 20],
             keyboard_timer: Timer::from_seconds(TIMER_KEYBOARD_SECS, TimerMode::Repeating),
-            falling_timer: Timer::from_seconds(TIMER_FALLING_SECS, TimerMode::Repeating),
+            drop_timer: Timer::from_seconds(TIMER_DROP_SECS, TimerMode::Repeating),
+            hard_drop_timer: Timer::from_seconds(TIMER_HARD_DROP_SECS, TimerMode::Repeating),
         }
     }
 }

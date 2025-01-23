@@ -1,19 +1,21 @@
 mod background;
+mod common_component;
+mod spawn_block_system;
+mod test_block;
 mod tetromino;
 
 use std::collections::{HashMap, HashSet};
 
 use bevy::app::{PreStartup, Update};
-use bevy::color::{Color, Gray, LinearRgba};
 use bevy::input::ButtonInput;
-use bevy::log::{debug, LogPlugin};
-use bevy::math::{Isometry3d, UVec2, Vec2, Vec3};
+use bevy::log::debug;
+use bevy::math::{Vec2, Vec3};
 #[cfg(feature = "bevy_dev_tools")]
 use bevy::prelude::info_once;
 use bevy::prelude::{
     in_state, AppExtStates, BuildChildren, BuildChildrenTransformExt, ChildBuild, Children,
-    Commands, Component, Entity, Gizmos, GlobalTransform, IntoSystemConfigs, KeyCode, NextState,
-    PluginGroup, Query, Res, ResMut, Resource, State, States, Transform, With,
+    Commands, Component, Entity, GlobalTransform, IntoSystemConfigs, KeyCode, NextState,
+    PluginGroup, Query, Res, ResMut, Resource, State, Transform, With,
 };
 use bevy::sprite::Sprite;
 use bevy::time::{Time, Timer, TimerMode};
@@ -21,7 +23,9 @@ use bevy::utils::default;
 use bevy::window::Window;
 use bevy::{app::App, window::WindowPlugin, DefaultPlugins};
 use bevy_egui::{egui, EguiContexts, EguiPlugin};
-use rand::seq::SliceRandom;
+use common_component::{ActiveBlock, ActiveDot, DropType};
+use spawn_block_system::spawn_block_system;
+use spawn_block_system::Randomizer7Bag;
 
 fn main() {
     let mut app = App::new();
@@ -101,92 +105,6 @@ fn ui_example_system(mut contexts: EguiContexts, game_data: Res<GameData>) {
     });
 }
 
-#[derive(Component)]
-struct ActiveBlock;
-
-#[derive(Component)]
-struct ActiveDot;
-
-/// https://simon.lc/the-history-of-tetris-randomizers
-/// There are 3 main kinds of tetris being competitively played right now and they all play in very different ways:
-/// 1. NES Tetris has a no bag randomiser and the win condition for a match is getting a higher score than your opponent.
-/// 2. TGM has the system you talked about and the win condition for a match is finishing earlier than your opponent, similar to a speedrun race.
-/// 3. Guideline Tetris has the 7-bag we all know and its win condition is making your opponent top out through sending garbage.
-
-#[derive(Resource)]
-struct Randomizer7Bag {
-    bag: Vec<tetromino::Block>,
-}
-
-impl Default for Randomizer7Bag {
-    fn default() -> Self {
-        Self {
-            bag: vec![
-                tetromino::Block::new_i(),
-                tetromino::Block::new_o(),
-                tetromino::Block::new_t(),
-                tetromino::Block::new_s(),
-                tetromino::Block::new_z(),
-                tetromino::Block::new_j(),
-                tetromino::Block::new_l(),
-            ],
-        }
-    }
-}
-
-impl Randomizer7Bag {
-    fn init(&mut self) {
-        self.bag = vec![
-            tetromino::Block::new_i(),
-            tetromino::Block::new_o(),
-            tetromino::Block::new_t(),
-            tetromino::Block::new_s(),
-            tetromino::Block::new_z(),
-            tetromino::Block::new_j(),
-            tetromino::Block::new_l(),
-        ];
-    }
-}
-
-fn block_randomizer_7bag(randomizer: &mut ResMut<Randomizer7Bag>) -> tetromino::Block {
-    if randomizer.bag.is_empty() {
-        randomizer.init();
-    }
-
-    let mut rng = rand::thread_rng();
-    randomizer.bag.shuffle(&mut rng);
-    randomizer.bag.pop().unwrap()
-}
-
-fn spawn_block_system(
-    mut commands: Commands,
-    mut randomizer: ResMut<Randomizer7Bag>,
-    query: Query<Entity, With<ActiveBlock>>,
-    mut state: ResMut<NextState<DropType>>,
-    mut game_data: ResMut<GameData>,
-) {
-    if query.iter().count() > 0 {
-        return;
-    }
-
-    let block = block_randomizer_7bag(&mut randomizer);
-    let mut transform_y_times: f32 = 8.0;
-    if let tetromino::Block::I { .. } = block {
-        transform_y_times = 9.0
-    };
-
-    state.set(DropType::Normal);
-    game_data.drop_timer.reset();
-    spawn_block(&mut commands, block, 0.0, 25.0 * transform_y_times);
-}
-
-#[derive(States, Debug, Clone, Eq, PartialEq, Hash, Default)]
-enum DropType {
-    #[default]
-    Normal,
-    Hard,
-}
-
 fn block_drop_type_system(
     keyboard_input: Res<ButtonInput<KeyCode>>,
     mut state: ResMut<NextState<DropType>>,
@@ -247,24 +165,50 @@ fn block_drop_system(
     }
 }
 
+fn block_drop_done(
+    commands: &mut Commands,
+    game_data: &mut ResMut<GameData>,
+    children_query: Query<&GlobalTransform, With<ActiveDot>>,
+    entity: Entity,
+    children: &Children,
+) {
+    children.iter().for_each(|child| {
+        commands.entity(*child).remove_parent_in_place();
+
+        let child_global_transform = children_query.get(*child).unwrap();
+        let (board_x, board_y) = get_object_position_in_board(
+            child_global_transform.translation().x,
+            child_global_transform.translation().y,
+        );
+
+        commands
+            .entity(*child)
+            .remove::<ActiveDot>()
+            .remove::<BoardDot>()
+            .insert(BoardDot { board_x, board_y });
+
+        place_dot_on_board(board_x, board_y, game_data);
+    });
+    commands.entity(entity).despawn();
+}
+
 fn eliminate_line_system(
     mut commands: Commands,
     mut game_data: ResMut<GameData>,
     mut board_dot_query: Query<((Entity, &mut Transform), &BoardDot)>,
 ) {
-    let mut eliminate_line_index: Vec<usize> = Vec::new();
+    let mut line_indexs_to_eliminate: Vec<usize> = Vec::new();
     for (i, line) in game_data.board_matrix.iter().enumerate() {
         if line.iter().all(|&x| x == 1) {
-            eliminate_line_index.push(i);
+            line_indexs_to_eliminate.push(i);
         }
     }
-
-    if eliminate_line_index.is_empty() {
+    if line_indexs_to_eliminate.is_empty() {
         return;
     }
 
     let mut despawned_dot_set: HashSet<u32> = HashSet::new();
-    for index in eliminate_line_index.iter() {
+    for index in line_indexs_to_eliminate.iter() {
         game_data.board_matrix[*index] = [0; 10];
         board_dot_query
             .iter()
@@ -276,67 +220,53 @@ fn eliminate_line_system(
             });
     }
 
-    let mut reach_dot_line: bool = false;
+    let mut is_reached_dot_line: bool = false;
+    let mut line_change_map: HashMap<usize, i8> = HashMap::new();
     for (i, line) in game_data.board_matrix.clone().iter().enumerate() {
         if line.iter().any(|&x| x == 1) {
-            reach_dot_line = true;
+            is_reached_dot_line = true;
         }
 
-        if !reach_dot_line {
+        if !is_reached_dot_line {
             continue;
         }
 
         debug!("eliminate line to y index: {}", i);
 
-        let mut line_change_map: HashMap<usize, i8> = HashMap::new();
         if line.iter().all(|&x| x == 0) {
+            eliminate_line_inner(&mut game_data, i);
+
             (0..i).for_each(|j| {
+                if line_indexs_to_eliminate.contains(&j) {
+                    return;
+                }
                 line_change_map
                     .entry(j)
                     .and_modify(|x| *x += 1)
                     .or_insert(1);
             });
-
-            eliminate_line_inner(&mut commands, &mut game_data, &mut board_dot_query, i);
         }
+    }
 
-        // still have bugs, need to fix
-        if !line_change_map.is_empty() {
-            board_dot_query
-                .iter_mut()
-                .for_each(|((entity, mut transform), board_dot)| {
-                    debug!("entity: {:?}, board_dot: {:?}", entity, board_dot);
-                    if despawned_dot_set.contains(&entity.index()) {
-                        return;
-                    }
+    if !line_change_map.is_empty() {
+        board_dot_query
+            .iter_mut()
+            .for_each(|((entity, mut transform), board_dot)| {
+                debug!("entity: {:?}, board_dot: {:?}", entity, board_dot);
 
-                    if line_change_map.contains_key(&(board_dot.board_y as usize)) {
-                        let times = line_change_map[&(board_dot.board_y as usize)];
-                        transform.translation.y -= 25.0 * times as f32;
-                        commands.entity(entity).insert(BoardDot {
-                            board_x: board_dot.board_x,
-                            board_y: board_dot.board_y + times,
-                        });
-                    }
-                });
-        }
+                if line_change_map.contains_key(&(board_dot.board_y as usize)) {
+                    let line_change_times = line_change_map[&(board_dot.board_y as usize)];
+                    transform.translation.y -= 25.0 * line_change_times as f32;
+                    commands.entity(entity).insert(BoardDot {
+                        board_x: board_dot.board_x,
+                        board_y: board_dot.board_y + line_change_times,
+                    });
+                }
+            });
     }
 }
 
-fn debug_game_data(info: &str, game_data: &GameData) {
-    debug!("{}-----------------", info);
-    for line in game_data.board_matrix.iter() {
-        debug!("{:?}", line);
-    }
-    debug!("{}-----------------", info);
-}
-
-fn eliminate_line_inner(
-    commands: &mut Commands,
-    game_data: &mut ResMut<GameData>,
-    board_dot_query: &mut Query<((Entity, &mut Transform), &BoardDot)>,
-    i: usize,
-) {
+fn eliminate_line_inner(game_data: &mut ResMut<GameData>, i: usize) {
     debug!("move line down 1 index, y index: {}", i - 1);
 
     // no more line to move down, break the recursion
@@ -349,21 +279,6 @@ fn eliminate_line_inner(
     game_data.board_matrix[i] = game_data.board_matrix[i - 1];
     game_data.board_matrix[i - 1] = [0; 10];
 
-    // board_dot_query
-    //             .iter_mut()
-    //             .for_each(|((entity, mut transform), board_dot)| {
-    //                 debug!("entity: {:?}, board_dot: {:?}", entity, board_dot);
-    //                 if board_dot.board_y == (i - 1) as i8 {
-    //                     transform.translation.y -= 25.0;
-    //                     if let Some(mut e) = commands.get_entity(entity) {
-    //                         e.try_insert(BoardDot {
-    //                             board_x: board_dot.board_x,
-    //                             board_y: board_dot.board_y + 1,
-    //                         });
-    //                     }}
-
-    //             });
-
     debug_game_data("after", game_data);
 
     // reach the top of the board, break the recursion
@@ -371,7 +286,7 @@ fn eliminate_line_inner(
         return;
     }
 
-    eliminate_line_inner(commands, game_data, board_dot_query, i - 1);
+    eliminate_line_inner(game_data, i - 1);
 }
 
 fn block_movement_system(
@@ -408,109 +323,8 @@ struct BoardDot {
     board_y: i8,
 }
 
-fn block_drop_done(
-    commands: &mut Commands,
-    game_data: &mut ResMut<GameData>,
-    children_query: Query<&GlobalTransform, With<ActiveDot>>,
-    entity: Entity,
-    children: &Children,
-) {
-    children.iter().for_each(|child| {
-        commands.entity(*child).remove_parent_in_place();
-        let child_global_transform = children_query.get(*child).unwrap();
-        let (board_x, board_y) = get_dot_board_position2(
-            child_global_transform.translation().x,
-            child_global_transform.translation().y,
-        );
-
-        commands
-            .entity(*child)
-            .remove::<ActiveDot>()
-            .insert(BoardDot { board_x, board_y });
-
-        dot_in_board(board_x, board_y, game_data);
-    });
-    commands.entity(entity).despawn();
-}
-
-fn dot_in_board(board_x: i8, board_y: i8, game_data: &mut ResMut<GameData>) {
+fn place_dot_on_board(board_x: i8, board_y: i8, game_data: &mut ResMut<GameData>) {
     game_data.board_matrix[board_y as usize][board_x as usize] = 1;
-}
-
-fn spawn_block(
-    commands: &mut Commands,
-    block: tetromino::Block,
-    transform_x: f32,
-    transform_y: f32,
-) {
-    let dots: [tetromino::Dot; 4] = block.dots_by_state();
-    let color: Color = block.color();
-
-    commands
-        .spawn((
-            Sprite {
-                custom_size: Some(Vec2::new(0.0, 0.0)),
-                ..default()
-            },
-            Transform {
-                translation: Vec3::new(-25.0 * 1.5 + transform_x, 25.0 * 1.5 + transform_y, 1.0),
-                ..default()
-            },
-            block,
-            tetromino::Rotation {},
-            ActiveBlock,
-        ))
-        .with_children(|parent| {
-            for dot in dots.iter() {
-                parent.spawn((
-                    Sprite {
-                        color,
-                        custom_size: Some(Vec2::new(25.0, 25.0)),
-                        ..default()
-                    },
-                    Transform {
-                        translation: Vec3::new(dot.x as f32 * 25.0, -dot.y as f32 * 25.0, 0.0),
-                        ..default()
-                    },
-                    ActiveDot,
-                ));
-            }
-        });
-}
-
-fn test_block(mut commands: Commands) {
-    spawn_block(&mut commands, tetromino::Block::new_i(), -300.0, 0.0);
-    spawn_block(&mut commands, tetromino::Block::new_o(), -200.0, 0.0);
-    spawn_block(&mut commands, tetromino::Block::new_t(), -100.0, 0.0);
-    spawn_block(&mut commands, tetromino::Block::new_s(), 0.0, 0.0);
-    spawn_block(&mut commands, tetromino::Block::new_z(), 100.0, 0.0);
-    spawn_block(&mut commands, tetromino::Block::new_j(), 200.0, 0.0);
-    spawn_block(&mut commands, tetromino::Block::new_l(), 300.0, 0.0);
-}
-
-fn test_block_gizmos(mut gizmos: Gizmos) {
-    block_gizmos(&mut gizmos, -300.0);
-    block_gizmos(&mut gizmos, -200.0);
-    block_gizmos(&mut gizmos, -100.0);
-    block_gizmos(&mut gizmos, 0.0);
-    block_gizmos(&mut gizmos, 100.0);
-    block_gizmos(&mut gizmos, 200.0);
-    block_gizmos(&mut gizmos, 300.0);
-}
-
-fn block_gizmos(gizmos: &mut Gizmos, transform_x: f32) {
-    gizmos.rect(
-        Isometry3d::from_translation(Vec3::new(transform_x, 0.0, 1.0)),
-        Vec2::new(100.0, 100.0),
-        LinearRgba::gray(0.3),
-    );
-
-    gizmos.grid(
-        Isometry3d::from_translation(Vec3::new(transform_x, 0.0, 1.0)),
-        UVec2::new(4, 4),
-        Vec2::new(25.0, 25.0),
-        LinearRgba::gray(0.05),
-    );
 }
 
 fn block_rotation_system(
@@ -580,37 +394,26 @@ impl Default for GameData {
     }
 }
 
-fn get_dot_board_position2(x: f32, y: f32) -> (i8, i8) {
-    let mut board_x: i8 = if x < 0.0 {
+fn get_object_position_in_board(x: f32, y: f32) -> (i8, i8) {
+    let board_x: i8 = if x < 0.0 {
         (4.0 - (x.abs() / 25.0 - 0.5)) as i8
     } else {
         (5.0 + (x / 25.0 - 0.5)) as i8
     };
-    // board_x += dot_x;
 
-    let mut board_y: i8 = if y < 0.0 {
+    let board_y: i8 = if y < 0.0 {
         (10.0 + (y.abs() / 25.0 - 0.5)) as i8
     } else {
         (9.0 - (y / 25.0 - 0.5)) as i8
     };
-    // board_y += dot_y;
 
     (board_x, board_y)
 }
 
-fn get_dot_board_position(x: f32, y: f32, dot_x: i8, dot_y: i8) -> (i8, i8) {
-    let mut board_x: i8 = if x < 0.0 {
-        (4.0 - (x.abs() / 25.0 - 0.5)) as i8
-    } else {
-        (5.0 + (x / 25.0 - 0.5)) as i8
-    };
-    board_x += dot_x;
+fn get_dot_position_in_board(x: f32, y: f32, dot_x: i8, dot_y: i8) -> (i8, i8) {
+    let (mut board_x, mut board_y) = get_object_position_in_board(x, y);
 
-    let mut board_y: i8 = if y < 0.0 {
-        (10.0 + (y.abs() / 25.0 - 0.5)) as i8
-    } else {
-        (9.0 - (y / 25.0 - 0.5)) as i8
-    };
+    board_x += dot_x;
     board_y += dot_y;
 
     (board_x, board_y)
@@ -633,7 +436,7 @@ fn board_check_block_position(
     let dots = block.dots_by_state();
     // println!("--------------");
     for dot in dots.iter() {
-        let (board_x, board_y) = get_dot_board_position(x, y, dot.x, dot.y);
+        let (board_x, board_y) = get_dot_position_in_board(x, y, dot.x, dot.y);
 
         // println!("x: {}, y: {}", board_x, board_y);
 
@@ -648,6 +451,14 @@ fn board_check_block_position(
     // println!("--------------");
 
     true
+}
+
+fn debug_game_data(info: &str, game_data: &GameData) {
+    debug!("{}-----------------", info);
+    for line in game_data.board_matrix.iter() {
+        debug!("{:?}", line);
+    }
+    debug!("{}-----------------", info);
 }
 
 #[cfg(feature = "bevy_dev_tools")]

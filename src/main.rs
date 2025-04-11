@@ -15,15 +15,15 @@ use bevy::prelude::info_once;
 use bevy::prelude::{
     in_state, AppExtStates, BuildChildren, BuildChildrenTransformExt, ChildBuild, Children,
     Commands, Component, Entity, GlobalTransform, IntoSystemConfigs, KeyCode, NextState,
-    PluginGroup, Query, Res, ResMut, Resource, State, Transform, With,
+    PluginGroup, Query, Res, ResMut, State, Transform, With,
 };
 use bevy::sprite::Sprite;
-use bevy::time::{Time, Timer, TimerMode};
+use bevy::time::Time;
 use bevy::utils::default;
 use bevy::window::Window;
 use bevy::{app::App, window::WindowPlugin, DefaultPlugins};
 use bevy_egui::{egui, EguiContexts, EguiPlugin};
-use common_component::{ActiveBlock, ActiveDot, DropType};
+use common_component::{ActiveBlock, ActiveDot, DropType, GameData};
 use spawn_block_system::spawn_block_system;
 use spawn_block_system::Randomizer7Bag;
 
@@ -46,8 +46,8 @@ fn main() {
     // .add_systems(Startup, test_block)
     // .add_systems(Update, test_block_gizmos)
     .init_resource::<Randomizer7Bag>()
-    .init_state::<DropType>()
     .add_systems(Update, spawn_block_system)
+    .init_state::<DropType>()
     .add_systems(
         Update,
         (block_rotation_system, block_movement_system).run_if(in_state(DropType::Normal)),
@@ -155,7 +155,7 @@ fn block_drop_system(
     if can_drop {
         transform.translation.y -= 25.0;
     } else {
-        block_drop_done(
+        place_block_on_board(
             &mut commands,
             &mut game_data,
             children_query,
@@ -165,7 +165,7 @@ fn block_drop_system(
     }
 }
 
-fn block_drop_done(
+fn place_block_on_board(
     commands: &mut Commands,
     game_data: &mut ResMut<GameData>,
     children_query: Query<&GlobalTransform, With<ActiveDot>>,
@@ -368,29 +368,6 @@ fn block_rotation_system(
                 ));
             }
         });
-    }
-}
-
-const TIMER_KEYBOARD_SECS: f32 = 0.1;
-const TIMER_DROP_SECS: f32 = 1.0;
-const TIMER_HARD_DROP_SECS: f32 = 0.01;
-
-#[derive(Resource)]
-struct GameData {
-    board_matrix: [[i8; 10]; 20],
-    keyboard_timer: Timer,
-    drop_timer: Timer,
-    hard_drop_timer: Timer,
-}
-
-impl Default for GameData {
-    fn default() -> Self {
-        Self {
-            board_matrix: [[0; 10]; 20],
-            keyboard_timer: Timer::from_seconds(TIMER_KEYBOARD_SECS, TimerMode::Repeating),
-            drop_timer: Timer::from_seconds(TIMER_DROP_SECS, TimerMode::Repeating),
-            hard_drop_timer: Timer::from_seconds(TIMER_HARD_DROP_SECS, TimerMode::Repeating),
-        }
     }
 }
 

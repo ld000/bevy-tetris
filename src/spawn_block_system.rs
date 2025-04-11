@@ -11,8 +11,8 @@ use bevy::{
 use rand::seq::SliceRandom;
 
 use crate::{
-    common_component::{ActiveBlock, ActiveDot, DropType},
-    tetromino, GameData,
+    common_component::{ActiveBlock, ActiveDot, DropType, GameData},
+    tetromino,
 };
 
 /// https://simon.lc/the-history-of-tetris-randomizers

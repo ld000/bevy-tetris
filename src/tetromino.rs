@@ -15,7 +15,7 @@ pub enum State {
     None,
 }
 
-#[derive(Component)]
+#[derive(Component, Clone)]
 pub enum Block {
     I {
         dots: [[Dot; 4]; 4],
@@ -89,6 +89,10 @@ impl Block {
             Self::J { state: s, .. } => *s = state,
             Self::L { state: s, .. } => *s = state,
         }
+    }
+
+    pub fn reset_rotation(&mut self) {
+        self.set_state(State::Zero);
     }
 
     pub fn color(&self) -> Color {

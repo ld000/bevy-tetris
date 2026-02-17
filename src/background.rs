@@ -8,11 +8,11 @@ use bevy::prelude::{
 };
 use bevy::sprite::{ColorMaterial, MeshMaterial2d};
 use bevy::text::{TextColor, TextFont};
-use bevy::ui::{AlignItems, BorderColor, Display, JustifyContent, Node, PositionType, UiRect, Val};
+use bevy::ui::{AlignItems, Display, JustifyContent, Node, PositionType, UiRect, Val};
 use bevy::utils::default;
 use bevy::window::{PrimaryWindow, Window};
 
-use crate::common_component::{ScoreText, LinesText};
+use crate::common_component::{LevelText, LinesText, ScoreText};
 
 const MAIN_COLOR: Color = Color::srgb(62.0 / 255.0, 209.0 / 255.0, 185.0 / 255.0);
 const INNER_WINDOW_COLOR: Color = Color::srgb(0.0, 0.0, 0.0);
@@ -262,6 +262,19 @@ fn spawn_score_display(commands: &mut Commands, top: f32, left: f32) {
                 LinesText,
                 Node {
                     margin: UiRect::top(Val::Px(10.0)),
+                    ..default()
+                },
+            ));
+            parent.spawn((
+                Text::new("Level: 1"),
+                TextColor(WHITE_SMOKE.into()),
+                TextFont {
+                    font_size: 12.0,
+                    ..default()
+                },
+                LevelText,
+                Node {
+                    margin: UiRect::top(Val::Px(5.0)),
                     ..default()
                 },
             ));

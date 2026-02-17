@@ -4,7 +4,7 @@ mod spawn_block_system;
 mod test_block;
 mod tetromino;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use bevy::app::{PreStartup, Update};
 use bevy::input::ButtonInput;
@@ -14,7 +14,7 @@ use bevy::math::{Vec2, Vec3};
 use bevy::prelude::info_once;
 use bevy::prelude::{
     in_state, AppExtStates, BuildChildren, BuildChildrenTransformExt, ChildBuild, Children,
-    Commands, Component, Condition, DespawnRecursiveExt, Entity, GlobalTransform, IntoSystemConfigs, KeyCode, NextState,
+    Commands, Component, Condition, DespawnRecursiveExt, DetectChanges, Entity, GlobalTransform, IntoSystemConfigs, KeyCode, NextState,
     OnEnter, PluginGroup, Query, Res, ResMut, State, Text, Transform, With, Without,
 };
 use bevy::sprite::Sprite;
@@ -26,7 +26,7 @@ use bevy_egui::{egui, EguiContexts, EguiPlugin};
 use bevy::color::Color;
 use bevy::text::{TextColor, TextFont};
 use bevy::ui::{AlignItems, BackgroundColor, FlexDirection, JustifyContent, Node, PositionType, Val};
-use common_component::{ActiveBlock, ActiveDot, DropType, GameData, GameOverOverlay, GameState, LinesText, PreviewDot, ScoreText};
+use common_component::{ActiveBlock, ActiveDot, DropType, GameData, GameOverOverlay, GameState, HoldDot, LevelText, LinesText, PreviewDot, ScoreText};
 use spawn_block_system::{spawn_block_system, update_preview_system};
 use spawn_block_system::Randomizer7Bag;
 
@@ -44,6 +44,7 @@ fn main() {
     .add_plugins(EguiPlugin)
     .add_systems(Update, ui_example_system)
     .add_systems(Update, update_score_display)
+    .add_systems(Update, update_hold_preview_system)
     .init_resource::<GameData>()
     .add_systems(PreStartup, background::setup_background)
     .add_systems(Update, background::setup_background_grid)
@@ -55,7 +56,7 @@ fn main() {
     .add_systems(Update, (spawn_block_system, update_preview_system).chain().run_if(in_state(GameState::Playing)))
     .add_systems(
         Update,
-        (block_rotation_system, block_movement_system)
+        (block_rotation_system, block_movement_system, hold_block_system)
             .run_if(in_state(GameState::Playing).and(in_state(DropType::Normal).or(in_state(DropType::Soft)))),
     )
     .add_systems(
@@ -114,16 +115,26 @@ fn ui_example_system(mut contexts: EguiContexts, game_data: Res<GameData>) {
     });
 }
 
+fn gravity_seconds(level: u32) -> f32 {
+    let l = level as f32;
+    let base = (0.8 - ((l - 1.0) * 0.007)).max(0.0);
+    base.powf(l - 1.0).max(0.05)
+}
+
 fn update_score_display(
     game_data: Res<GameData>,
     mut score_query: Query<&mut Text, With<ScoreText>>,
-    mut lines_query: Query<&mut Text, (With<LinesText>, Without<ScoreText>)>,
+    mut lines_query: Query<&mut Text, (With<LinesText>, Without<ScoreText>, Without<LevelText>)>,
+    mut level_query: Query<&mut Text, (With<LevelText>, Without<ScoreText>, Without<LinesText>)>,
 ) {
     if let Ok(mut text) = score_query.get_single_mut() {
         **text = format!("{}", game_data.score);
     }
     if let Ok(mut text) = lines_query.get_single_mut() {
         **text = format!("Lines: {}", game_data.lines_cleared);
+    }
+    if let Ok(mut text) = level_query.get_single_mut() {
+        **text = format!("Level: {}", game_data.level);
     }
 }
 
@@ -182,7 +193,7 @@ fn block_drop_system(
         }
     }
 
-    if query.iter().count() == 0 {
+    if query.is_empty() {
         return;
     }
     let (entity, children, block, mut transform) = query.single_mut();
@@ -245,12 +256,14 @@ fn place_block_on_board(
         commands
             .entity(*child)
             .remove::<ActiveDot>()
-            .remove::<BoardDot>()
             .insert(BoardDot { board_x, board_y });
 
         place_dot_on_board(board_x, board_y, game_data);
     });
     commands.entity(entity).despawn();
+
+    // Reset hold availability when a piece locks down
+    game_data.hold_used = false;
 }
 
 fn eliminate_line_system(
@@ -277,10 +290,12 @@ fn eliminate_line_system(
         4 => 800,
         _ => 0,
     };
-    game_data.score += points;
+    game_data.score += points * game_data.level;
     game_data.lines_cleared += lines_count as u32;
+    game_data.level = (game_data.lines_cleared / 10) + 1;
+    let new_duration = std::time::Duration::from_secs_f32(gravity_seconds(game_data.level));
+    game_data.drop_timer.set_duration(new_duration);
 
-    let mut despawned_dot_set: HashSet<u32> = HashSet::new();
     for index in line_indexs_to_eliminate.iter() {
         game_data.board_matrix[*index] = [0; 10];
         board_dot_query
@@ -288,7 +303,6 @@ fn eliminate_line_system(
             .for_each(|((entity, _transform), board_dot)| {
                 if board_dot.board_y == *index as i8 {
                     commands.entity(entity).despawn();
-                    despawned_dot_set.insert(entity.index());
                 }
             });
     }
@@ -446,21 +460,14 @@ fn block_rotation_system(
     mut game_data: ResMut<GameData>,
 ) {
     for (entity, children, mut block, transform) in block_query.iter_mut() {
-        let mut is_rotation = false;
         let (from, to);
         let original_state = block.state().clone();
 
         if keyboard_input.just_pressed(KeyCode::KeyE) {
             (from, to) = tetromino::Rotation::rotate_right(&mut block);
-            is_rotation = true;
         } else if keyboard_input.just_pressed(KeyCode::KeyQ) {
             (from, to) = tetromino::Rotation::rotate_left(&mut block);
-            is_rotation = true;
         } else {
-            continue;
-        }
-
-        if !is_rotation {
             continue;
         }
 
@@ -577,6 +584,103 @@ pub fn board_check_block_position(
     true
 }
 
+fn hold_block_system(
+    mut commands: Commands,
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+    mut game_data: ResMut<GameData>,
+    query: Query<(Entity, &tetromino::Block), With<ActiveBlock>>,
+    mut state: ResMut<NextState<DropType>>,
+) {
+    if !keyboard_input.just_pressed(KeyCode::KeyC) {
+        return;
+    }
+    if game_data.hold_used {
+        return;
+    }
+
+    let Ok((entity, block)) = query.get_single() else {
+        return;
+    };
+
+    let mut current_block = block.clone();
+    current_block.reset_rotation();
+
+    let previously_held = game_data.held_block.take();
+    game_data.held_block = Some(current_block);
+    game_data.hold_used = true;
+
+    // Reset soft drop tracking
+    game_data.soft_drop_cells = 0;
+    game_data.hard_drop_start_y = None;
+
+    commands.entity(entity).despawn_recursive();
+
+    // Spawn previously held piece if there was one
+    if let Some(held) = previously_held {
+        let mut transform_y_times: f32 = 8.0;
+        if let tetromino::Block::I { .. } = held {
+            transform_y_times = 9.0;
+        }
+        spawn_block_system::spawn_block(&mut commands, held, 0.0, 25.0 * transform_y_times);
+    }
+    // If hold was empty, spawn_block_system will handle spawning next piece
+
+    state.set(DropType::Normal);
+}
+
+const HOLD_BOX_CENTER_X: f32 = -165.0;
+const HOLD_BOX_CENTER_Y: f32 = 180.0;
+const HOLD_DOT_SIZE: f32 = 11.25;
+
+fn update_hold_preview_system(
+    mut commands: Commands,
+    game_data: Res<GameData>,
+    hold_dots: Query<Entity, With<HoldDot>>,
+) {
+    if !game_data.is_changed() {
+        return;
+    }
+
+    for entity in hold_dots.iter() {
+        commands.entity(entity).despawn();
+    }
+
+    let Some(ref block) = game_data.held_block else {
+        return;
+    };
+
+    let dots = block.dots_by_state();
+    let mut color = block.color();
+
+    // Dim to 40% opacity when hold is used
+    if game_data.hold_used {
+        let srgba = color.to_srgba();
+        color = Color::srgba(srgba.red, srgba.green, srgba.blue, 0.4);
+    }
+
+    let min_x = dots.iter().map(|d| d.x).min().unwrap() as f32;
+    let max_x = dots.iter().map(|d| d.x).max().unwrap() as f32;
+    let min_y = dots.iter().map(|d| d.y).min().unwrap() as f32;
+    let max_y = dots.iter().map(|d| d.y).max().unwrap() as f32;
+    let center_x = (min_x + max_x) / 2.0;
+    let center_y = (min_y + max_y) / 2.0;
+
+    for dot in dots.iter() {
+        let x = HOLD_BOX_CENTER_X + (dot.x as f32 - center_x) * HOLD_DOT_SIZE;
+        let y = HOLD_BOX_CENTER_Y - (dot.y as f32 - center_y) * HOLD_DOT_SIZE;
+
+        commands.spawn((
+            Sprite {
+                color,
+                custom_size: Some(Vec2::new(HOLD_DOT_SIZE, HOLD_DOT_SIZE)),
+                ..default()
+            },
+            Transform::from_xyz(x, y, 2.0),
+            HoldDot,
+        ));
+    }
+}
+
 fn debug_game_data(info: &str, game_data: &GameData) {
     debug!("{}-----------------", info);
     for line in game_data.board_matrix.iter() {
@@ -644,6 +748,7 @@ fn restart_system(
     active_blocks: Query<Entity, With<ActiveBlock>>,
     overlay: Query<Entity, With<GameOverOverlay>>,
     preview_dots: Query<Entity, With<PreviewDot>>,
+    hold_dots: Query<Entity, With<HoldDot>>,
     mut game_state: ResMut<NextState<GameState>>,
     mut drop_state: ResMut<NextState<DropType>>,
     mut randomizer: ResMut<Randomizer7Bag>,
@@ -665,6 +770,9 @@ fn restart_system(
         commands.entity(entity).despawn_recursive();
     }
     for entity in preview_dots.iter() {
+        commands.entity(entity).despawn();
+    }
+    for entity in hold_dots.iter() {
         commands.entity(entity).despawn();
     }
 

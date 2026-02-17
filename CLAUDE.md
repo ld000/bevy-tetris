@@ -36,8 +36,11 @@ The project uses custom optimization profiles in Cargo.toml:
 
 - **Arrow Left/Right**: Move block horizontally
 - **Arrow Up**: Hard drop (fast drop)
+- **Arrow Down**: Soft drop (faster drop, 1 point per cell)
 - **Q**: Rotate block counter-clockwise
 - **E**: Rotate block clockwise
+- **C**: Hold piece (swap current piece with hold)
+- **Enter**: Restart (on game over screen)
 - **Space** (with bevy_dev_tools): Toggle UI debug overlay
 
 ## Architecture Overview
@@ -58,22 +61,32 @@ The game follows Bevy's Entity Component System architecture:
   - `board_matrix`: 10x20 array representing the game board (0=empty, 1=occupied)
   - `drop_timer`: Controls normal drop speed (1.0s)
   - `hard_drop_timer`: Controls hard drop speed (0.01s)
+  - `soft_drop_timer`: Controls soft drop speed (0.05s)
   - `keyboard_timer`: Keyboard input timing (0.1s)
+  - `score`, `lines_cleared`: Scoring state
+  - `held_block`: Currently held piece (Option<Block>)
+  - `hold_used`: Whether hold has been used this turn
 - `Randomizer7Bag`: Implements 7-bag randomizer for block spawning
 
 **States:**
-- `DropType`: Enum with `Normal` and `Hard` variants, controls drop behavior
+- `DropType`: Enum with `Normal`, `Hard`, and `Soft` variants, controls drop behavior
+- `GameState`: Enum with `Playing` and `GameOver` variants
 
 ### Core Systems
 
 Systems run in the `Update` schedule with specific run conditions:
 
-1. **spawn_block_system**: Spawns new blocks when no active block exists, uses 7-bag randomizer
-2. **block_movement_system**: Handles horizontal movement (runs only in Normal drop state)
-3. **block_rotation_system**: Handles Q/E rotation keys (runs only in Normal drop state)
-4. **block_drop_type_system**: Switches to Hard drop state when Up arrow pressed
+1. **spawn_block_system**: Spawns new blocks when no active block exists, uses 7-bag randomizer. Detects game over if spawn position is blocked.
+2. **block_movement_system**: Handles horizontal movement (runs only in Normal/Soft drop state)
+3. **block_rotation_system**: Handles Q/E rotation keys with SRS wall kicks (runs only in Normal/Soft drop state)
+4. **block_drop_type_system**: Switches drop state (Up=Hard, Down=Soft)
 5. **block_drop_system**: Moves block down based on timers, places block when it can't drop further
-6. **eliminate_line_system**: Detects and clears completed lines, moves remaining blocks down (runs in chain after block_drop_system)
+6. **eliminate_line_system**: Detects and clears completed lines, awards score, moves remaining blocks down (runs in chain after block_drop_system)
+7. **hold_block_system**: Handles C key to swap current piece with held piece
+8. **update_hold_preview_system**: Renders held piece preview in left panel
+9. **update_preview_system**: Renders next 6 pieces in right panel
+10. **game_over_display_system**: Shows game over overlay with score
+11. **restart_system**: Handles Enter key to restart from game over
 
 ### Coordinate Systems
 
@@ -104,7 +117,7 @@ Implements Guideline Tetris randomization: shuffles all 7 tetromino types, dispe
 
 ### Block Rotation
 
-Each tetromino stores 4 rotation states (Zero, One, Two, Three) as arrays of 4 dots with relative coordinates. Rotation recreates child entities with new dot positions. The `kick_check()` function exists but is not yet implemented (wall kicks not functional).
+Each tetromino stores 4 rotation states (Zero, One, Two, Three) as arrays of 4 dots with relative coordinates. Rotation recreates child entities with new dot positions. Full SRS (Super Rotation System) wall kicks are implemented via `get_kick_offsets()`.
 
 ### Line Elimination
 
@@ -126,11 +139,3 @@ When a block can't drop further, `place_block_on_board()`:
 
 Uses bevy_egui to display a debug window showing the board_matrix state as a grid of filled (■) and empty (□) squares.
 
-## Known Incomplete Features
-
-- Wall kicks are not implemented (kick_check function is a stub)
-- No game over detection
-- No scoring system
-- No level progression or speed increase
-- No hold piece functionality
-- No next piece preview

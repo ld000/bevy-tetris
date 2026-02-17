@@ -11,7 +11,9 @@ A Tetris game built with the Bevy 0.15.1 game engine, following Guideline Tetris
 - **Hard Drop / Soft Drop**: Fast drop and accelerated drop
 - **Next Piece Preview**: Shows the next 6 upcoming pieces
 - **Game Over & Restart**: Detection when blocks can't spawn, press Enter to restart
-- **Score Display**: Real-time score and lines cleared in the side panel
+- **Hold Piece**: Press C to swap current piece with held piece
+- **Level System**: Speed increases every 10 lines cleared
+- **Score Display**: Real-time score, lines cleared, and level in the side panel
 - **Debug UI**: Board state visualization using egui
 
 ## Requirements
@@ -35,6 +37,7 @@ cargo run --release
 | ↓ | Soft drop |
 | Q | Rotate counter-clockwise |
 | E | Rotate clockwise |
+| C | Hold piece (swap with held) |
 | Enter | Restart (on game over) |
 | Space | Toggle debug overlay (with bevy_dev_tools) |
 
@@ -44,7 +47,7 @@ cargo run --release
 - **Pieces**: I, O, T, S, Z, J, L
 - **Rotation**: SRS with wall kicks
 - **Randomizer**: 7-bag (all 7 pieces before reshuffling)
-- **Drop Speed**: 1s/row normal, 0.05s/row soft, 0.01s/row hard
+- **Drop Speed**: Level-based gravity (starts at 1s/row, increases every 10 lines), 0.05s/row soft, 0.01s/row hard
 
 ## Project Structure
 
@@ -67,8 +70,6 @@ src/
 
 ## Planned Features
 
-- Level progression with increasing speed
-- Hold piece functionality
 - High score persistence
 
 ## License

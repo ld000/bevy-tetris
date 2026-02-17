@@ -3,6 +3,8 @@ use bevy::{
     time::{Timer, TimerMode},
 };
 
+use crate::tetromino;
+
 const TIMER_KEYBOARD_SECS: f32 = 0.1;
 const TIMER_DROP_SECS: f32 = 1.0;
 const TIMER_HARD_DROP_SECS: f32 = 0.01;
@@ -19,6 +21,9 @@ pub struct GameData {
     pub score: u32,
     pub lines_cleared: u32,
     pub hard_drop_start_y: Option<f32>,
+    pub held_block: Option<tetromino::Block>,
+    pub hold_used: bool,
+    pub level: u32,
 }
 
 impl Default for GameData {
@@ -33,6 +38,9 @@ impl Default for GameData {
             score: 0,
             lines_cleared: 0,
             hard_drop_start_y: None,
+            held_block: None,
+            hold_used: false,
+            level: 1,
         }
     }
 }
@@ -69,3 +77,9 @@ pub struct GameOverOverlay;
 
 #[derive(Component)]
 pub struct PreviewDot;
+
+#[derive(Component)]
+pub struct HoldDot;
+
+#[derive(Component)]
+pub struct LevelText;

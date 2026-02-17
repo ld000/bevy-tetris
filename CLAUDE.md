@@ -21,6 +21,9 @@ cargo build
 # Build for release
 cargo build --release
 
+# Run tests
+cargo test
+
 # Run with dev tools enabled (includes UI debug overlay)
 cargo run --features bevy_dev_tools
 ```
@@ -65,7 +68,6 @@ The game follows Bevy's Entity Component System architecture:
   - `drop_timer`: Controls normal drop speed (1.0s)
   - `hard_drop_timer`: Controls hard drop speed (0.01s)
   - `soft_drop_timer`: Controls soft drop speed (0.05s)
-  - `keyboard_timer`: Keyboard input timing (0.1s)
   - `score`, `lines_cleared`: Scoring state
   - `held_block`: Currently held piece (Option<Block>)
   - `hold_used`: Whether hold has been used this turn
@@ -73,6 +75,8 @@ The game follows Bevy's Entity Component System architecture:
   - `lock_delay_active`: Whether lock delay is currently counting down
   - `lock_move_count`: Number of move/rotate resets during lock delay (capped at 15)
 - `Randomizer7Bag`: Implements 7-bag randomizer for block spawning
+- `GhostTracker`: Tracks ghost piece position/rotation to avoid per-frame entity churn
+- `HoldTracker`: Tracks hold preview state by block discriminant to skip unnecessary rebuilds
 
 **States:**
 - `DropType`: Enum with `Normal`, `Hard`, and `Soft` variants, controls drop behavior
@@ -86,12 +90,12 @@ Systems run in the `Update` schedule with specific run conditions:
 2. **block_movement_system**: Handles horizontal movement (runs only in Normal/Soft drop state)
 3. **block_rotation_system**: Handles Q/E rotation keys with SRS wall kicks (runs only in Normal/Soft drop state)
 4. **block_drop_type_system**: Switches drop state (Up=Hard, Down=Soft)
-5. **block_drop_system**: Moves block down based on timers, initiates lock delay when piece can't drop, places block when lock delay expires. Hard drop bypasses lock delay.
+5. **block_drop_system**: Moves block down based on timers, initiates lock delay when piece can't drop, places block when lock delay expires. Cancels lock delay if a rotation/move opens space below. Hard drop bypasses lock delay.
 6. **eliminate_line_system**: Detects and clears completed lines, awards score, moves remaining blocks down (runs in chain after block_drop_system)
 7. **hold_block_system**: Handles C key to swap current piece with held piece
-8. **update_hold_preview_system**: Renders held piece preview in left panel
+8. **update_hold_preview_system**: Renders held piece preview in left panel (skips rebuild when hold state unchanged)
 9. **update_preview_system**: Renders next 6 pieces in right panel
-10. **update_ghost_piece_system**: Despawns/respawns translucent ghost dots at the landing position of the active piece
+10. **update_ghost_piece_system**: Renders translucent ghost dots at the landing position (skips rebuild when position/rotation unchanged)
 11. **game_over_display_system**: Shows game over overlay with score
 12. **restart_system**: Handles Enter key to restart from game over
 13. **pause_system**: Toggles between Playing and Paused states on P key press
@@ -112,12 +116,19 @@ Systems run in the `Update` schedule with specific run conditions:
 
 ### Module Structure
 
-- **main.rs**: Main app setup, core game systems (movement, rotation, drop, line elimination), coordinate conversion utilities
-- **tetromino.rs**: Block enum with 7 tetromino types, each storing 4 rotation states as dot arrays, rotation logic
-- **spawn_block_system.rs**: Block spawning logic with 7-bag randomizer implementation
-- **common_component.rs**: Shared components (ActiveBlock, ActiveDot, BoardDot) and resources (GameData, DropType)
-- **background.rs**: Background and grid rendering
-- **test_block.rs**: Testing utilities (currently commented out in main.rs)
+- **main.rs**: App setup, mod declarations, system registration, egui debug UI
+- **board.rs**: `BoardDot` component, coordinate conversion (`get_object_position_in_board`, `get_dot_position_in_board`), `board_check_block_position`, `place_dot_on_board`
+- **movement.rs**: `block_movement_system` — horizontal movement with lock delay reset
+- **rotation.rs**: `block_rotation_system`, `get_kick_offsets` — SRS wall kicks, in-place child transform updates
+- **drop.rs**: `gravity_seconds`, `block_drop_type_system`, `block_drop_system`, `place_block_on_board` — drop logic with lock delay
+- **line_clear.rs**: `eliminate_line_system`, `eliminate_line_inner` — line detection, scoring, recursive line shifting
+- **ghost.rs**: `update_ghost_piece_system`, `GhostTracker` — ghost piece with change-detection optimization
+- **hold.rs**: `hold_block_system`, `update_hold_preview_system`, `HoldTracker` — hold piece swap and preview rendering
+- **game_state.rs**: `update_score_display`, `pause_system`, `pause_display_system`, `unpause_cleanup_system`, `game_over_display_system`, `restart_system`
+- **tetromino.rs**: `Block` enum with 7 tetromino types, each storing 4 rotation states as dot arrays, `Rotation` component and logic
+- **spawn_block_system.rs**: Block spawning logic with `Randomizer7Bag` implementation, next piece preview
+- **common_component.rs**: Shared components (`ActiveBlock`, `ActiveDot`, etc.) and resources (`GameData`, `DropType`, `GameState`)
+- **background.rs**: Background, grid rendering, score display layout
 
 ## Key Implementation Details
 
@@ -127,7 +138,7 @@ Implements Guideline Tetris randomization: shuffles all 7 tetromino types, dispe
 
 ### Block Rotation
 
-Each tetromino stores 4 rotation states (Zero, One, Two, Three) as arrays of 4 dots with relative coordinates. Rotation recreates child entities with new dot positions. Full SRS (Super Rotation System) wall kicks are implemented via `get_kick_offsets()`.
+Each tetromino stores 4 rotation states (Zero, One, Two, Three) as arrays of 4 dots with relative coordinates. Rotation updates child entity transforms in place (no despawn/respawn). Full SRS (Super Rotation System) wall kicks are implemented via `get_kick_offsets()` in `rotation.rs`.
 
 ### Line Elimination
 
@@ -148,11 +159,20 @@ When a block can't drop further, `place_block_on_board()`:
 
 ### Lock Delay
 
-When a piece lands (non-hard-drop), a 0.5s lock delay timer starts instead of instant placement. The timer is ticked every frame (independent of the drop timer). Moving or rotating the piece resets the timer, up to 15 resets to prevent infinite stalling. Hard drop bypasses lock delay entirely.
+When a piece lands (non-hard-drop), a 0.5s lock delay timer starts instead of instant placement. The timer is ticked every frame (independent of the drop timer). Moving or rotating the piece resets the timer, up to 15 resets to prevent infinite stalling. If a rotation/move opens space below the piece, lock delay is cancelled and normal gravity resumes. Hard drop bypasses lock delay entirely.
 
 ### Ghost Piece
 
-The `update_ghost_piece_system` simulates dropping the active piece from its current position until it can't go further, then spawns translucent (20% opacity) sprites at the landing position. Ghost dots are despawned and recreated every frame.
+The `update_ghost_piece_system` simulates dropping the active piece from its current position until it can't go further, then spawns translucent (20% opacity) sprites at the landing position. A `GhostTracker` resource caches the last rendered position and rotation state — ghost dots are only rebuilt when the piece moves or rotates.
+
+## Testing
+
+Unit tests are in inline `#[cfg(test)] mod tests` blocks within each module. Run with `cargo test`. Coverage includes:
+- **board.rs**: Coordinate conversion, collision detection, dot placement
+- **drop.rs**: Gravity curve values, monotonic decrease, floor at 0.05s
+- **rotation.rs**: SRS kick offset counts, identity-first property
+- **tetromino.rs**: Rotation cycling, state reset, O-piece invariance
+- **spawn_block_system.rs**: 7-bag completeness, peek/pop behavior, auto-refill
 
 ## UI
 

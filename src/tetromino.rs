@@ -6,7 +6,7 @@ pub struct Dot {
     pub y: i8,
 }
 
-#[derive(PartialEq, Clone, Copy)]
+#[derive(PartialEq, Clone, Copy, Debug)]
 pub enum State {
     Zero,
     One,
@@ -401,5 +401,95 @@ impl Rotation {
                 (State::None, State::None)
             },
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn all_blocks() -> Vec<Block> {
+        vec![
+            Block::new_i(),
+            Block::new_o(),
+            Block::new_t(),
+            Block::new_s(),
+            Block::new_z(),
+            Block::new_j(),
+            Block::new_l(),
+        ]
+    }
+
+    #[test]
+    fn initial_state_is_zero() {
+        for block in all_blocks() {
+            assert_eq!(*block.state(), State::Zero);
+        }
+    }
+
+    #[test]
+    fn rotate_right_cycles() {
+        let mut block = Block::new_t();
+        assert_eq!(*block.state(), State::Zero);
+        Rotation::rotate_right(&mut block);
+        assert_eq!(*block.state(), State::One);
+        Rotation::rotate_right(&mut block);
+        assert_eq!(*block.state(), State::Two);
+        Rotation::rotate_right(&mut block);
+        assert_eq!(*block.state(), State::Three);
+        Rotation::rotate_right(&mut block);
+        assert_eq!(*block.state(), State::Zero);
+    }
+
+    #[test]
+    fn rotate_left_cycles() {
+        let mut block = Block::new_t();
+        assert_eq!(*block.state(), State::Zero);
+        Rotation::rotate_left(&mut block);
+        assert_eq!(*block.state(), State::Three);
+        Rotation::rotate_left(&mut block);
+        assert_eq!(*block.state(), State::Two);
+        Rotation::rotate_left(&mut block);
+        assert_eq!(*block.state(), State::One);
+        Rotation::rotate_left(&mut block);
+        assert_eq!(*block.state(), State::Zero);
+    }
+
+    #[test]
+    fn dots_by_state_returns_4_dots() {
+        for block in all_blocks() {
+            assert_eq!(block.dots_by_state().len(), 4);
+        }
+    }
+
+    #[test]
+    fn o_piece_same_dots_all_states() {
+        let mut block = Block::new_o();
+        let dots_zero = block.dots_by_state();
+        Rotation::rotate_right(&mut block);
+        let dots_one = block.dots_by_state();
+        Rotation::rotate_right(&mut block);
+        let dots_two = block.dots_by_state();
+        Rotation::rotate_right(&mut block);
+        let dots_three = block.dots_by_state();
+
+        for i in 0..4 {
+            assert_eq!(dots_zero[i].x, dots_one[i].x);
+            assert_eq!(dots_zero[i].y, dots_one[i].y);
+            assert_eq!(dots_zero[i].x, dots_two[i].x);
+            assert_eq!(dots_zero[i].y, dots_two[i].y);
+            assert_eq!(dots_zero[i].x, dots_three[i].x);
+            assert_eq!(dots_zero[i].y, dots_three[i].y);
+        }
+    }
+
+    #[test]
+    fn reset_rotation_returns_to_zero() {
+        let mut block = Block::new_s();
+        Rotation::rotate_right(&mut block);
+        Rotation::rotate_right(&mut block);
+        assert_eq!(*block.state(), State::Two);
+        block.reset_rotation();
+        assert_eq!(*block.state(), State::Zero);
     }
 }

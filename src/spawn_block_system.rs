@@ -13,7 +13,7 @@ use bevy::{
 use rand::seq::SliceRandom;
 
 use crate::{
-    board_check_block_position,
+    board::board_check_block_position,
     common_component::{ActiveBlock, ActiveDot, DropType, GameData, GameState, PreviewDot},
     tetromino,
 };
@@ -21,7 +21,6 @@ use crate::{
 /// https://simon.lc/the-history-of-tetris-randomizers
 /// Guideline Tetris 7-bag randomizer: shuffles all 7 pieces, dispenses one by one,
 /// then refills. Uses a queue so we can peek ahead for the NEXT preview.
-
 fn new_shuffled_bag() -> Vec<tetromino::Block> {
     let mut bag = vec![
         tetromino::Block::new_i(),
@@ -90,7 +89,7 @@ pub fn spawn_block_system(
     let spawn_x = -25.0 * 1.5;
     let spawn_y = 25.0 * 1.5 + 25.0 * transform_y_times;
 
-    if !board_check_block_position(&mut game_data, spawn_x, spawn_y, &block) {
+    if !board_check_block_position(&game_data.board_matrix, spawn_x, spawn_y, &block) {
         game_state.set(GameState::GameOver);
         return;
     }
@@ -188,5 +187,67 @@ pub fn update_preview_system(
                 PreviewDot,
             ));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    #[test]
+    fn default_randomizer_has_14_pieces() {
+        let r = Randomizer7Bag::default();
+        assert_eq!(r.queue.len(), 14);
+    }
+
+    #[test]
+    fn peek_returns_requested_count() {
+        let r = Randomizer7Bag::default();
+        assert_eq!(r.peek(6).len(), 6);
+    }
+
+    #[test]
+    fn peek_does_not_consume() {
+        let r = Randomizer7Bag::default();
+        let first = r.peek(6);
+        let second = r.peek(6);
+        assert_eq!(first.len(), second.len());
+    }
+
+    fn block_type_name(block: &tetromino::Block) -> &'static str {
+        match block {
+            tetromino::Block::I { .. } => "I",
+            tetromino::Block::O { .. } => "O",
+            tetromino::Block::T { .. } => "T",
+            tetromino::Block::S { .. } => "S",
+            tetromino::Block::Z { .. } => "Z",
+            tetromino::Block::J { .. } => "J",
+            tetromino::Block::L { .. } => "L",
+        }
+    }
+
+    #[test]
+    fn seven_bag_contains_all_types() {
+        let mut r = Randomizer7Bag::default();
+        let mut types = HashSet::new();
+        for _ in 0..7 {
+            let block = r.pop_next();
+            types.insert(block_type_name(&block));
+        }
+        assert_eq!(types.len(), 7, "First 7 pieces should contain all 7 types");
+    }
+
+    #[test]
+    fn auto_refills_after_depletion() {
+        let mut r = Randomizer7Bag::default();
+        // Pop all 14 initial pieces
+        for _ in 0..14 {
+            r.pop_next();
+        }
+        // Should have auto-refilled
+        assert!(r.queue.len() >= 7);
+        // Can still pop
+        let _block = r.pop_next();
     }
 }

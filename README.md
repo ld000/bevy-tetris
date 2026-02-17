@@ -16,7 +16,7 @@ A Tetris game built with the Bevy 0.15.1 game engine, following Guideline Tetris
 - **Hold Piece**: Press C to swap current piece with held piece
 - **Level System**: Speed increases every 10 lines cleared
 - **Ghost Piece**: Translucent preview showing where the active piece will land
-- **Lock Delay**: 0.5s grace period to adjust a piece after it touches the ground (resets on move/rotate, max 15 resets)
+- **Lock Delay**: 0.5s grace period to adjust a piece after it touches the ground (resets on move/rotate, max 15 resets, cancels if space opens below)
 - **Pause**: Press P to pause/resume the game
 - **Score Display**: Real-time score, lines cleared, and level in the side panel
 - **Debug UI**: Board state visualization using egui
@@ -54,18 +54,25 @@ cargo run --release
 - **Rotation**: SRS with wall kicks
 - **Randomizer**: 7-bag (all 7 pieces before reshuffling)
 - **Drop Speed**: Level-based gravity (starts at 1s/row, increases every 10 lines), 0.05s/row soft, 0.01s/row hard
-- **Lock Delay**: 0.5s after touching ground, resets on move/rotate (max 15), hard drop bypasses
+- **Lock Delay**: 0.5s after touching ground, resets on move/rotate (max 15), cancels if space opens below, hard drop bypasses
 
 ## Project Structure
 
 ```
 src/
-├── main.rs                # App setup, core systems (movement, rotation, drop, scoring, game over)
-├── tetromino.rs           # Block types, rotation states, SRS kick tables
-├── spawn_block_system.rs  # Block spawning, 7-bag randomizer, next piece preview
-├── common_component.rs    # Components (ActiveBlock, ActiveDot, BoardDot) and resources (GameData)
-├── background.rs          # Background, grid, score panel rendering
-└── test_block.rs          # Testing utilities
+├── main.rs                # App setup, system registration, egui debug UI
+├── board.rs               # Board coordinate conversion, collision detection
+├── movement.rs            # Horizontal movement system
+├── rotation.rs            # SRS rotation with wall kicks
+├── drop.rs                # Drop logic, lock delay, block placement
+├── line_clear.rs          # Line detection, scoring, row shifting
+├── ghost.rs               # Ghost piece preview with change tracking
+├── hold.rs                # Hold piece swap and preview rendering
+├── game_state.rs          # Score display, pause, game over, restart
+├── tetromino.rs           # Block types, rotation states, dot arrays
+├── spawn_block_system.rs  # Block spawning, 7-bag randomizer, next preview
+├── common_component.rs    # Shared components and resources
+└── background.rs          # Background, grid, score panel rendering
 ```
 
 ## Technical Details

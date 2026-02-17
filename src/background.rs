@@ -76,29 +76,7 @@ fn spawn_background(
                     Mesh2d(meshes.add(Rectangle::new(GRID_WIDTH, GRID_HEIGHT))),
                     MeshMaterial2d(materials.add(INNER_WINDOW_COLOR)),
                     Transform::from_xyz(0.0, 0.0, 0.1),
-                ))
-                // .with_children(|center_grid| {
-                //     let line = Segment2d::new(
-                //         Dir2::from_xy(-GRID_WIDTH / 2.0 + SINGLE_GRID_SIZE, -GRID_HEIGHT / 2.0)
-                //             .unwrap(),
-                //         GRID_HEIGHT,
-                //     );
-
-                //     // (0..19).for_each(|i| {
-                //     //     center_grid.spawn((
-                //     //         Mesh2d(
-                //     //             meshes.add(),
-                //     //         ),
-                //     //         MeshMaterial2d(materials.add(Color::WHITE)),
-                //     //     ));
-                //     // });
-                //     // (1..10).for_each(|i| {
-                //     //     center_grid.spawn((
-                //     //         Mesh2d(meshes.add(Rectangle::new(GRID_LINE_WIDTH_PX, GRID_HEIGHT_BASE_PX))),
-                //     //         MeshMaterial2d(materials.add(WHITE_SMOKE)),
-                //     //     ));
-                // })
-                ;
+                ));
         });
 
     // left
@@ -205,10 +183,8 @@ fn spawn_title(commands: &mut Commands, title: &str, top: f32, left: f32) {
                 display: Display::Flex,
                 align_items: AlignItems::Center,
                 justify_content: JustifyContent::SpaceAround,
-                // border: UiRect::all(Val::Px(1.0)), // for test
                 ..default()
             },
-            // BorderColor(WHITE_SMOKE.into()), // for test
         ))
         .with_children(|text_node| {
             text_node.spawn((

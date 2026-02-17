@@ -12,6 +12,8 @@ use bevy::ui::{AlignItems, BorderColor, Display, JustifyContent, Node, PositionT
 use bevy::utils::default;
 use bevy::window::{PrimaryWindow, Window};
 
+use crate::common_component::{ScoreText, LinesText};
+
 const MAIN_COLOR: Color = Color::srgb(62.0 / 255.0, 209.0 / 255.0, 185.0 / 255.0);
 const INNER_WINDOW_COLOR: Color = Color::srgb(0.0, 0.0, 0.0);
 
@@ -28,8 +30,8 @@ const TEXT_BOX_HEIGHT: f32 = 30.0;
 const SIDE_BOX_WIDTH: f32 = 80.0;
 const SIDE_INNER_BOX_WIDTH: f32 = SIDE_BOX_WIDTH - 2.0 * BORDER_WIDTH;
 const HOLD_BOX_HEIGHT: f32 = 80.0;
-const NEXT_BOX_HEIGHT: f32 = 200.0;
-const SCORE_BOX_HEIGHT: f32 = 220.0;
+const NEXT_BOX_HEIGHT: f32 = 300.0;
+const SCORE_BOX_HEIGHT: f32 = 120.0;
 
 pub fn setup_background(
     mut commands: Commands,
@@ -181,6 +183,14 @@ fn spawn_background(
             - TEXT_BOX_HEIGHT,
         window.width() / 2.0 + CENTER_BOX_WIDTH / 2.0,
     );
+
+    // Spawn score display text
+    spawn_score_display(
+        commands,
+        window.height() / 2.0 + CENTER_BOX_HEIGHT / 2.0
+            - SCORE_BOX_HEIGHT,
+        window.width() / 2.0 + CENTER_BOX_WIDTH / 2.0,
+    );
 }
 
 fn spawn_title(commands: &mut Commands, title: &str, top: f32, left: f32) {
@@ -195,10 +205,10 @@ fn spawn_title(commands: &mut Commands, title: &str, top: f32, left: f32) {
                 display: Display::Flex,
                 align_items: AlignItems::Center,
                 justify_content: JustifyContent::SpaceAround,
-                border: UiRect::all(Val::Px(1.0)), // for test
+                // border: UiRect::all(Val::Px(1.0)), // for test
                 ..default()
             },
-            BorderColor(WHITE_SMOKE.into()), // for test
+            // BorderColor(WHITE_SMOKE.into()), // for test
         ))
         .with_children(|text_node| {
             text_node.spawn((
@@ -206,6 +216,52 @@ fn spawn_title(commands: &mut Commands, title: &str, top: f32, left: f32) {
                 TextColor(BLACK.into()),
                 TextFont {
                     font_size: TITLE_FONT_SIZE,
+                    ..default()
+                },
+            ));
+        });
+}
+
+fn spawn_score_display(commands: &mut Commands, top: f32, left: f32) {
+    commands
+        .spawn((
+            Node {
+                width: Val::Px(SIDE_BOX_WIDTH),
+                height: Val::Px(SCORE_BOX_HEIGHT - TEXT_BOX_HEIGHT),
+                position_type: PositionType::Absolute,
+                top: Val::Px(top),
+                left: Val::Px(left),
+                display: Display::Flex,
+                flex_direction: bevy::ui::FlexDirection::Column,
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Start,
+                ..default()
+            },
+        ))
+        .with_children(|parent| {
+            parent.spawn((
+                Text::new("0"),
+                TextColor(WHITE_SMOKE.into()),
+                TextFont {
+                    font_size: 20.0,
+                    ..default()
+                },
+                ScoreText,
+                Node {
+                    margin: UiRect::top(Val::Px(10.0)),
+                    ..default()
+                },
+            ));
+            parent.spawn((
+                Text::new("Lines: 0"),
+                TextColor(WHITE_SMOKE.into()),
+                TextFont {
+                    font_size: 12.0,
+                    ..default()
+                },
+                LinesText,
+                Node {
+                    margin: UiRect::top(Val::Px(10.0)),
                     ..default()
                 },
             ));

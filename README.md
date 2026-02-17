@@ -1,43 +1,29 @@
 # bevy-tetris
 
-A Tetris game implementation using the Bevy game engine (v0.15.1) with ECS architecture and modern Tetris guidelines.
+A Tetris game built with the Bevy 0.15.1 game engine, following Guideline Tetris rules.
 
 ## Features
 
-- ✅ **SRS Wall Kicks**: Full Super Rotation System implementation with proper kick tables for all piece types
-- ✅ **7-Bag Randomizer**: Guideline-compliant piece randomization for fair gameplay
-- ✅ **Line Clearing**: Automatic line detection and clearing with proper block movement
-- ✅ **Hard Drop**: Fast drop functionality with visual feedback
-- ✅ **Smooth Controls**: Responsive keyboard input for movement and rotation
-- ✅ **Debug UI**: Real-time board state visualization using egui
+- **SRS Wall Kicks**: Full Super Rotation System with kick tables for all piece types
+- **7-Bag Randomizer**: Guideline-compliant piece randomization
+- **Scoring**: Line clears (100/300/500/800), hard drop (2pts/cell), soft drop (1pt/cell)
+- **Line Clearing**: Automatic detection and clearing with gravity
+- **Hard Drop / Soft Drop**: Fast drop and accelerated drop
+- **Next Piece Preview**: Shows the next 6 upcoming pieces
+- **Game Over & Restart**: Detection when blocks can't spawn, press Enter to restart
+- **Score Display**: Real-time score and lines cleared in the side panel
+- **Debug UI**: Board state visualization using egui
 
 ## Requirements
 
-- Rust 1.93.1 or later (for edition2024 support)
-- Cargo 1.93.1 or later
+- Rust (edition 2021)
 
-## Installation
+## Getting Started
 
 ```bash
-# Clone the repository
 git clone <repository-url>
 cd bevy-tetris
-
-# Build the project
-cargo build --release
-```
-
-## Running the Game
-
-```bash
-# Run in development mode (faster compilation)
-cargo run
-
-# Run in release mode (better performance)
 cargo run --release
-
-# Run with dev tools enabled (UI debug overlay)
-cargo run --features bevy_dev_tools
 ```
 
 ## Controls
@@ -45,114 +31,46 @@ cargo run --features bevy_dev_tools
 | Key | Action |
 |-----|--------|
 | ← → | Move block left/right |
-| ↑ | Hard drop (fast drop) |
+| ↑ | Hard drop |
+| ↓ | Soft drop |
 | Q | Rotate counter-clockwise |
 | E | Rotate clockwise |
-| Space | Toggle UI debug overlay (with bevy_dev_tools) |
+| Enter | Restart (on game over) |
+| Space | Toggle debug overlay (with bevy_dev_tools) |
 
 ## Game Rules
 
-- **Board Size**: 10 columns × 20 rows
-- **Piece Types**: I, O, T, S, Z, J, L (standard Tetris pieces)
-- **Rotation System**: SRS (Super Rotation System) with wall kicks
-- **Randomizer**: 7-bag system (all 7 pieces appear once before reshuffling)
-- **Drop Speed**: 1 second per row (normal), 0.01 seconds per row (hard drop)
-
-## Architecture
-
-### ECS Components
-
-- **ActiveBlock**: Marks the currently falling tetromino
-- **ActiveDot**: Individual dots of the active block
-- **BoardDot**: Placed dots with board coordinates
-- **Block**: Tetromino type with rotation states
-- **Rotation**: Marker for rotatable blocks
-
-### Resources
-
-- **GameData**: Core game state (board matrix, timers, score)
-- **Randomizer7Bag**: 7-bag piece randomization
-- **DropType**: State machine for normal/hard drop
-
-### Key Systems
-
-1. **spawn_block_system**: Spawns new blocks using 7-bag randomizer
-2. **block_movement_system**: Handles horizontal movement
-3. **block_rotation_system**: Handles rotation with SRS wall kicks
-4. **block_drop_system**: Manages block falling and placement
-5. **eliminate_line_system**: Detects and clears completed lines
+- **Board**: 10 × 20
+- **Pieces**: I, O, T, S, Z, J, L
+- **Rotation**: SRS with wall kicks
+- **Randomizer**: 7-bag (all 7 pieces before reshuffling)
+- **Drop Speed**: 1s/row normal, 0.05s/row soft, 0.01s/row hard
 
 ## Project Structure
 
 ```
-bevy-tetris/
-├── src/
-│   ├── main.rs                  # Main game loop and systems
-│   ├── tetromino.rs             # Block definitions and rotation logic
-│   ├── spawn_block_system.rs   # Block spawning and randomizer
-│   ├── common_component.rs      # Shared components and resources
-│   ├── background.rs            # Background rendering
-│   └── test_block.rs            # Testing utilities
-├── assets/                      # Game assets (if any)
-├── Cargo.toml                   # Project dependencies
-├── CLAUDE.md                    # AI assistant guidance
-├── TODO.md                      # Development roadmap
-└── README.md                    # This file
+src/
+├── main.rs                # App setup, core systems (movement, rotation, drop, scoring, game over)
+├── tetromino.rs           # Block types, rotation states, SRS kick tables
+├── spawn_block_system.rs  # Block spawning, 7-bag randomizer, next piece preview
+├── common_component.rs    # Components (ActiveBlock, ActiveDot, BoardDot) and resources (GameData)
+├── background.rs          # Background, grid, score panel rendering
+└── test_block.rs          # Testing utilities
 ```
-
-## Development
-
-### Building
-
-The project uses custom optimization profiles for better development experience:
-
-- **Dev profile**: opt-level 1 for main crate, opt-level 3 for dependencies
-- **Release profile**: Full optimization with LTO
-- **WASM release**: Size-optimized for web deployment
-
-### Testing
-
-```bash
-# Run tests
-cargo test
-
-# Run with logging
-RUST_LOG=debug cargo run
-```
-
-## Planned Features
-
-See [TODO.md](TODO.md) for the complete development roadmap. Upcoming features include:
-
-- Score system with line clear bonuses
-- Level progression with increasing difficulty
-- Next piece preview
-- Hold piece functionality
-- Game over detection
-- High score persistence
 
 ## Technical Details
 
 - **Engine**: Bevy 0.15.1
 - **UI**: bevy_egui 0.32.0
 - **Randomization**: rand 0.8.5
-- **Graphics Backend**: Metal (macOS), Vulkan/DirectX (other platforms)
-- **Coordinate System**: 25×25 pixel blocks, centered origin
+- **Coordinate System**: 25×25 pixel blocks, centered origin (800×600 window)
 
-## Known Issues
+## Planned Features
 
-- Wall kick implementation is complete but may need fine-tuning for edge cases
-- No game over detection yet
-- Score system not yet implemented
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit issues or pull requests.
+- Level progression with increasing speed
+- Hold piece functionality
+- High score persistence
 
 ## License
 
 [Add your license here]
-
-## Credits
-
-Built with [Bevy](https://bevyengine.org/) - A refreshingly simple data-driven game engine built in Rust.

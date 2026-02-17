@@ -14,8 +14,8 @@ use bevy::math::{Vec2, Vec3};
 use bevy::prelude::info_once;
 use bevy::prelude::{
     in_state, AppExtStates, BuildChildren, BuildChildrenTransformExt, ChildBuild, Children,
-    Commands, Component, Entity, GlobalTransform, IntoSystemConfigs, KeyCode, NextState,
-    PluginGroup, Query, Res, ResMut, State, Transform, With,
+    Commands, Component, Condition, DespawnRecursiveExt, Entity, GlobalTransform, IntoSystemConfigs, KeyCode, NextState,
+    OnEnter, PluginGroup, Query, Res, ResMut, State, Text, Transform, With, Without,
 };
 use bevy::sprite::Sprite;
 use bevy::time::Time;
@@ -23,8 +23,11 @@ use bevy::utils::default;
 use bevy::window::Window;
 use bevy::{app::App, window::WindowPlugin, DefaultPlugins};
 use bevy_egui::{egui, EguiContexts, EguiPlugin};
-use common_component::{ActiveBlock, ActiveDot, DropType, GameData};
-use spawn_block_system::spawn_block_system;
+use bevy::color::Color;
+use bevy::text::{TextColor, TextFont};
+use bevy::ui::{AlignItems, BackgroundColor, FlexDirection, JustifyContent, Node, PositionType, Val};
+use common_component::{ActiveBlock, ActiveDot, DropType, GameData, GameOverOverlay, GameState, LinesText, PreviewDot, ScoreText};
+use spawn_block_system::{spawn_block_system, update_preview_system};
 use spawn_block_system::Randomizer7Bag;
 
 fn main() {
@@ -40,17 +43,20 @@ fn main() {
     }))
     .add_plugins(EguiPlugin)
     .add_systems(Update, ui_example_system)
+    .add_systems(Update, update_score_display)
     .init_resource::<GameData>()
     .add_systems(PreStartup, background::setup_background)
     .add_systems(Update, background::setup_background_grid)
     // .add_systems(Startup, test_block)
     // .add_systems(Update, test_block_gizmos)
     .init_resource::<Randomizer7Bag>()
-    .add_systems(Update, spawn_block_system)
     .init_state::<DropType>()
+    .init_state::<GameState>()
+    .add_systems(Update, (spawn_block_system, update_preview_system).chain().run_if(in_state(GameState::Playing)))
     .add_systems(
         Update,
-        (block_rotation_system, block_movement_system).run_if(in_state(DropType::Normal)),
+        (block_rotation_system, block_movement_system)
+            .run_if(in_state(GameState::Playing).and(in_state(DropType::Normal).or(in_state(DropType::Soft)))),
     )
     .add_systems(
         Update,
@@ -59,8 +65,11 @@ fn main() {
             block_drop_system,
             eliminate_line_system,
         )
-            .chain(),
-    );
+            .chain()
+            .run_if(in_state(GameState::Playing)),
+    )
+    .add_systems(OnEnter(GameState::GameOver), game_over_display_system)
+    .add_systems(Update, restart_system.run_if(in_state(GameState::GameOver)));
 
     #[cfg(feature = "bevy_dev_tools")]
     {
@@ -105,11 +114,25 @@ fn ui_example_system(mut contexts: EguiContexts, game_data: Res<GameData>) {
     });
 }
 
+fn update_score_display(
+    game_data: Res<GameData>,
+    mut score_query: Query<&mut Text, With<ScoreText>>,
+    mut lines_query: Query<&mut Text, (With<LinesText>, Without<ScoreText>)>,
+) {
+    if let Ok(mut text) = score_query.get_single_mut() {
+        **text = format!("{}", game_data.score);
+    }
+    if let Ok(mut text) = lines_query.get_single_mut() {
+        **text = format!("Lines: {}", game_data.lines_cleared);
+    }
+}
+
 fn block_drop_type_system(
     keyboard_input: Res<ButtonInput<KeyCode>>,
     mut state: ResMut<NextState<DropType>>,
     old_state: Res<State<DropType>>,
     mut game_data: ResMut<GameData>,
+    query: Query<&Transform, With<ActiveBlock>>,
 ) {
     if old_state.get() == &DropType::Hard {
         return;
@@ -117,6 +140,20 @@ fn block_drop_type_system(
     if keyboard_input.just_pressed(KeyCode::ArrowUp) {
         state.set(DropType::Hard);
         game_data.hard_drop_timer.reset();
+
+        // Capture starting y position for hard drop scoring
+        if let Ok(transform) = query.get_single() {
+            game_data.hard_drop_start_y = Some(transform.translation.y);
+        }
+    }
+    if keyboard_input.pressed(KeyCode::ArrowDown) && old_state.get() != &DropType::Soft {
+        state.set(DropType::Soft);
+        game_data.soft_drop_timer.reset();
+    }
+    if keyboard_input.just_released(KeyCode::ArrowDown) && old_state.get() == &DropType::Soft {
+        state.set(DropType::Normal);
+        game_data.score += game_data.soft_drop_cells;
+        game_data.soft_drop_cells = 0;
     }
 }
 
@@ -130,6 +167,11 @@ fn block_drop_system(
 ) {
     if state.get() == &DropType::Hard {
         let finished = game_data.hard_drop_timer.tick(time.delta()).finished();
+        if !finished {
+            return;
+        }
+    } else if state.get() == &DropType::Soft {
+        let finished = game_data.soft_drop_timer.tick(time.delta()).finished();
         if !finished {
             return;
         }
@@ -154,6 +196,9 @@ fn block_drop_system(
 
     if can_drop {
         transform.translation.y -= 25.0;
+        if state.get() == &DropType::Soft {
+            game_data.soft_drop_cells += 1;
+        }
     } else {
         place_block_on_board(
             &mut commands,
@@ -161,6 +206,7 @@ fn block_drop_system(
             children_query,
             entity,
             children,
+            &transform,
         );
     }
 }
@@ -171,7 +217,22 @@ fn place_block_on_board(
     children_query: Query<&GlobalTransform, With<ActiveDot>>,
     entity: Entity,
     children: &Children,
+    transform: &Transform,
 ) {
+    // Calculate hard drop score
+    if let Some(start_y) = game_data.hard_drop_start_y {
+        let current_y = transform.translation.y;
+        let cells_dropped = ((start_y - current_y) / 25.0).round() as u32;
+        game_data.score += cells_dropped * 2;
+        game_data.hard_drop_start_y = None;
+    }
+
+    // Award soft drop score on placement
+    if game_data.soft_drop_cells > 0 {
+        game_data.score += game_data.soft_drop_cells;
+        game_data.soft_drop_cells = 0;
+    }
+
     children.iter().for_each(|child| {
         commands.entity(*child).remove_parent_in_place();
 
@@ -206,6 +267,18 @@ fn eliminate_line_system(
     if line_indexs_to_eliminate.is_empty() {
         return;
     }
+
+    // Award points for line clears
+    let lines_count = line_indexs_to_eliminate.len();
+    let points = match lines_count {
+        1 => 100,
+        2 => 300,
+        3 => 500,
+        4 => 800,
+        _ => 0,
+    };
+    game_data.score += points;
+    game_data.lines_cleared += lines_count as u32;
 
     let mut despawned_dot_set: HashSet<u32> = HashSet::new();
     for index in line_indexs_to_eliminate.iter() {
@@ -461,7 +534,7 @@ fn get_object_position_in_board(x: f32, y: f32) -> (i8, i8) {
     (board_x, board_y)
 }
 
-fn get_dot_position_in_board(x: f32, y: f32, dot_x: i8, dot_y: i8) -> (i8, i8) {
+pub fn get_dot_position_in_board(x: f32, y: f32, dot_x: i8, dot_y: i8) -> (i8, i8) {
     let (mut board_x, mut board_y) = get_object_position_in_board(x, y);
 
     board_x += dot_x;
@@ -478,7 +551,7 @@ fn get_dot_position_in_board(x: f32, y: f32, dot_x: i8, dot_y: i8) -> (i8, i8) {
 /// | ...  | ...  | ...  | ... | ...  |
 /// | 19,0 | 19,1 | 19,2 | ... | 19,9 |
 /// -----------------------------------
-fn board_check_block_position(
+pub fn board_check_block_position(
     game_data: &mut ResMut<GameData>,
     x: f32,
     y: f32,
@@ -510,6 +583,93 @@ fn debug_game_data(info: &str, game_data: &GameData) {
         debug!("{:?}", line);
     }
     debug!("{}-----------------", info);
+}
+
+fn game_over_display_system(mut commands: Commands, game_data: Res<GameData>) {
+    commands
+        .spawn((
+            Node {
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                position_type: PositionType::Absolute,
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
+                flex_direction: FlexDirection::Column,
+                ..default()
+            },
+            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.7)),
+            GameOverOverlay,
+        ))
+        .with_children(|parent| {
+            parent.spawn((
+                Text::new("GAME OVER"),
+                TextColor(Color::WHITE),
+                TextFont {
+                    font_size: 60.0,
+                    ..default()
+                },
+            ));
+            parent.spawn((
+                Text::new(format!("Score: {}", game_data.score)),
+                TextColor(Color::WHITE),
+                TextFont {
+                    font_size: 30.0,
+                    ..default()
+                },
+                Node {
+                    margin: bevy::ui::UiRect::top(Val::Px(20.0)),
+                    ..default()
+                },
+            ));
+            parent.spawn((
+                Text::new("Press Enter to restart"),
+                TextColor(Color::srgba(1.0, 1.0, 1.0, 0.7)),
+                TextFont {
+                    font_size: 20.0,
+                    ..default()
+                },
+                Node {
+                    margin: bevy::ui::UiRect::top(Val::Px(30.0)),
+                    ..default()
+                },
+            ));
+        });
+}
+
+fn restart_system(
+    mut commands: Commands,
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+    mut game_data: ResMut<GameData>,
+    board_dots: Query<Entity, With<BoardDot>>,
+    active_blocks: Query<Entity, With<ActiveBlock>>,
+    overlay: Query<Entity, With<GameOverOverlay>>,
+    preview_dots: Query<Entity, With<PreviewDot>>,
+    mut game_state: ResMut<NextState<GameState>>,
+    mut drop_state: ResMut<NextState<DropType>>,
+    mut randomizer: ResMut<Randomizer7Bag>,
+) {
+    if !keyboard_input.just_pressed(KeyCode::Enter) {
+        return;
+    }
+
+    *game_data = GameData::default();
+    *randomizer = Randomizer7Bag::default();
+
+    for entity in board_dots.iter() {
+        commands.entity(entity).despawn();
+    }
+    for entity in active_blocks.iter() {
+        commands.entity(entity).despawn();
+    }
+    for entity in overlay.iter() {
+        commands.entity(entity).despawn_recursive();
+    }
+    for entity in preview_dots.iter() {
+        commands.entity(entity).despawn();
+    }
+
+    game_state.set(GameState::Playing);
+    drop_state.set(DropType::Normal);
 }
 
 #[cfg(feature = "bevy_dev_tools")]

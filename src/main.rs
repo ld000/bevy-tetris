@@ -15,7 +15,7 @@ use bevy::prelude::info_once;
 use bevy::prelude::{
     in_state, AppExtStates, BuildChildren, BuildChildrenTransformExt, ChildBuild, Children,
     Commands, Component, Condition, DespawnRecursiveExt, DetectChanges, Entity, GlobalTransform, IntoSystemConfigs, KeyCode, NextState,
-    OnEnter, PluginGroup, Query, Res, ResMut, State, Text, Transform, With, Without,
+    OnEnter, OnExit, PluginGroup, Query, Res, ResMut, State, Text, Transform, With, Without,
 };
 use bevy::sprite::Sprite;
 use bevy::time::Time;
@@ -26,7 +26,7 @@ use bevy_egui::{egui, EguiContexts, EguiPlugin};
 use bevy::color::Color;
 use bevy::text::{TextColor, TextFont};
 use bevy::ui::{AlignItems, BackgroundColor, FlexDirection, JustifyContent, Node, PositionType, Val};
-use common_component::{ActiveBlock, ActiveDot, DropType, GameData, GameOverOverlay, GameState, HoldDot, LevelText, LinesText, PreviewDot, ScoreText};
+use common_component::{ActiveBlock, ActiveDot, DropType, GameData, GameOverOverlay, GameState, GhostDot, HoldDot, LevelText, LinesText, PauseOverlay, PreviewDot, ScoreText};
 use spawn_block_system::{spawn_block_system, update_preview_system};
 use spawn_block_system::Randomizer7Bag;
 
@@ -69,6 +69,10 @@ fn main() {
             .chain()
             .run_if(in_state(GameState::Playing)),
     )
+    .add_systems(Update, update_ghost_piece_system.run_if(in_state(GameState::Playing)))
+    .add_systems(Update, pause_system.run_if(in_state(GameState::Playing).or(in_state(GameState::Paused))))
+    .add_systems(OnEnter(GameState::Paused), pause_display_system)
+    .add_systems(OnExit(GameState::Paused), unpause_cleanup_system)
     .add_systems(OnEnter(GameState::GameOver), game_over_display_system)
     .add_systems(Update, restart_system.run_if(in_state(GameState::GameOver)));
 
@@ -176,6 +180,28 @@ fn block_drop_system(
     state: Res<State<DropType>>,
     mut game_data: ResMut<GameData>,
 ) {
+    if query.is_empty() {
+        return;
+    }
+
+    // If lock delay is active, tick it every frame (independent of drop timer)
+    if game_data.lock_delay_active && state.get() != &DropType::Hard {
+        game_data.lock_delay_timer.tick(time.delta());
+        if game_data.lock_delay_timer.finished() {
+            let (entity, children, _block, transform) = query.single_mut();
+            place_block_on_board(
+                &mut commands,
+                &mut game_data,
+                children_query,
+                entity,
+                children,
+                &transform,
+            );
+        }
+        return;
+    }
+
+    // Normal drop timer gating
     if state.get() == &DropType::Hard {
         let finished = game_data.hard_drop_timer.tick(time.delta()).finished();
         if !finished {
@@ -193,9 +219,6 @@ fn block_drop_system(
         }
     }
 
-    if query.is_empty() {
-        return;
-    }
     let (entity, children, block, mut transform) = query.single_mut();
 
     let can_drop = board_check_block_position(
@@ -210,7 +233,8 @@ fn block_drop_system(
         if state.get() == &DropType::Soft {
             game_data.soft_drop_cells += 1;
         }
-    } else {
+        game_data.lock_delay_active = false;
+    } else if state.get() == &DropType::Hard {
         place_block_on_board(
             &mut commands,
             &mut game_data,
@@ -219,6 +243,11 @@ fn block_drop_system(
             children,
             &transform,
         );
+    } else {
+        // Start lock delay
+        game_data.lock_delay_active = true;
+        game_data.lock_delay_timer.reset();
+        game_data.lock_move_count = 0;
     }
 }
 
@@ -264,6 +293,10 @@ fn place_block_on_board(
 
     // Reset hold availability when a piece locks down
     game_data.hold_used = false;
+
+    // Reset lock delay state
+    game_data.lock_delay_active = false;
+    game_data.lock_move_count = 0;
 }
 
 fn eliminate_line_system(
@@ -391,6 +424,10 @@ fn block_movement_system(
             transform_x = 25.0;
         }
 
+        if transform_x == 0.0 {
+            continue;
+        }
+
         let in_board = board_check_block_position(
             &mut game_data,
             transform.translation.x + transform_x,
@@ -400,6 +437,14 @@ fn block_movement_system(
 
         if in_board {
             transform.translation.x += transform_x;
+
+            // Reset lock delay on successful move (up to 15 resets)
+            if game_data.lock_delay_active {
+                game_data.lock_move_count += 1;
+                if game_data.lock_move_count < 15 {
+                    game_data.lock_delay_timer.reset();
+                }
+            }
         }
     }
 }
@@ -518,6 +563,14 @@ fn block_rotation_system(
                     ));
                 }
             });
+
+            // Reset lock delay on successful rotation (up to 15 resets)
+            if game_data.lock_delay_active {
+                game_data.lock_move_count += 1;
+                if game_data.lock_move_count < 15 {
+                    game_data.lock_delay_timer.reset();
+                }
+            }
         } else {
             // Rotation failed, revert to original state
             block.set_state(original_state);
@@ -749,6 +802,7 @@ fn restart_system(
     overlay: Query<Entity, With<GameOverOverlay>>,
     preview_dots: Query<Entity, With<PreviewDot>>,
     hold_dots: Query<Entity, With<HoldDot>>,
+    ghost_dots: Query<Entity, With<GhostDot>>,
     mut game_state: ResMut<NextState<GameState>>,
     mut drop_state: ResMut<NextState<DropType>>,
     mut randomizer: ResMut<Randomizer7Bag>,
@@ -775,9 +829,122 @@ fn restart_system(
     for entity in hold_dots.iter() {
         commands.entity(entity).despawn();
     }
+    for entity in ghost_dots.iter() {
+        commands.entity(entity).despawn();
+    }
 
     game_state.set(GameState::Playing);
     drop_state.set(DropType::Normal);
+}
+
+fn update_ghost_piece_system(
+    mut commands: Commands,
+    ghost_dots: Query<Entity, With<GhostDot>>,
+    query: Query<(&tetromino::Block, &Transform), With<ActiveBlock>>,
+    mut game_data: ResMut<GameData>,
+) {
+    // Despawn existing ghost dots
+    for entity in ghost_dots.iter() {
+        commands.entity(entity).despawn();
+    }
+
+    let Ok((block, transform)) = query.get_single() else {
+        return;
+    };
+
+    // Simulate dropping until we can't go further
+    let mut ghost_y = transform.translation.y;
+    while board_check_block_position(&mut game_data, transform.translation.x, ghost_y - 25.0, block) {
+        ghost_y -= 25.0;
+    }
+
+    // Don't draw ghost if it's at the same position as the active piece
+    if ghost_y == transform.translation.y {
+        return;
+    }
+
+    // Spawn ghost dots at the landing position
+    let srgba = block.color().to_srgba();
+    let ghost_color = Color::srgba(srgba.red, srgba.green, srgba.blue, 0.2);
+
+    for dot in block.dots_by_state().iter() {
+        let x = transform.translation.x + dot.x as f32 * 25.0;
+        let y = ghost_y + (-dot.y as f32) * 25.0;
+
+        commands.spawn((
+            Sprite {
+                color: ghost_color,
+                custom_size: Some(Vec2::new(25.0, 25.0)),
+                ..default()
+            },
+            Transform::from_xyz(x, y, 0.5),
+            GhostDot,
+        ));
+    }
+}
+
+fn pause_system(
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+    game_state: Res<State<GameState>>,
+    mut next_state: ResMut<NextState<GameState>>,
+) {
+    if !keyboard_input.just_pressed(KeyCode::KeyP) {
+        return;
+    }
+
+    match game_state.get() {
+        GameState::Playing => next_state.set(GameState::Paused),
+        GameState::Paused => next_state.set(GameState::Playing),
+        _ => {}
+    }
+}
+
+fn pause_display_system(mut commands: Commands) {
+    commands
+        .spawn((
+            Node {
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                position_type: PositionType::Absolute,
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
+                flex_direction: FlexDirection::Column,
+                ..default()
+            },
+            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.7)),
+            PauseOverlay,
+        ))
+        .with_children(|parent| {
+            parent.spawn((
+                Text::new("PAUSED"),
+                TextColor(Color::WHITE),
+                TextFont {
+                    font_size: 60.0,
+                    ..default()
+                },
+            ));
+            parent.spawn((
+                Text::new("Press P to resume"),
+                TextColor(Color::srgba(1.0, 1.0, 1.0, 0.7)),
+                TextFont {
+                    font_size: 20.0,
+                    ..default()
+                },
+                Node {
+                    margin: bevy::ui::UiRect::top(Val::Px(30.0)),
+                    ..default()
+                },
+            ));
+        });
+}
+
+fn unpause_cleanup_system(
+    mut commands: Commands,
+    overlay: Query<Entity, With<PauseOverlay>>,
+) {
+    for entity in overlay.iter() {
+        commands.entity(entity).despawn_recursive();
+    }
 }
 
 #[cfg(feature = "bevy_dev_tools")]

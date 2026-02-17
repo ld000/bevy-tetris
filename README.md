@@ -15,6 +15,9 @@ A Tetris game built with the Bevy 0.15.1 game engine, following Guideline Tetris
 - **Game Over & Restart**: Detection when blocks can't spawn, press Enter to restart
 - **Hold Piece**: Press C to swap current piece with held piece
 - **Level System**: Speed increases every 10 lines cleared
+- **Ghost Piece**: Translucent preview showing where the active piece will land
+- **Lock Delay**: 0.5s grace period to adjust a piece after it touches the ground (resets on move/rotate, max 15 resets)
+- **Pause**: Press P to pause/resume the game
 - **Score Display**: Real-time score, lines cleared, and level in the side panel
 - **Debug UI**: Board state visualization using egui
 
@@ -40,6 +43,7 @@ cargo run --release
 | Q | Rotate counter-clockwise |
 | E | Rotate clockwise |
 | C | Hold piece (swap with held) |
+| P | Pause / Resume |
 | Enter | Restart (on game over) |
 | Space | Toggle debug overlay (with bevy_dev_tools) |
 
@@ -50,6 +54,7 @@ cargo run --release
 - **Rotation**: SRS with wall kicks
 - **Randomizer**: 7-bag (all 7 pieces before reshuffling)
 - **Drop Speed**: Level-based gravity (starts at 1s/row, increases every 10 lines), 0.05s/row soft, 0.01s/row hard
+- **Lock Delay**: 0.5s after touching ground, resets on move/rotate (max 15), hard drop bypasses
 
 ## Project Structure
 

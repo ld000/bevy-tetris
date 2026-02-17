@@ -40,6 +40,7 @@ The project uses custom optimization profiles in Cargo.toml:
 - **Q**: Rotate block counter-clockwise
 - **E**: Rotate block clockwise
 - **C**: Hold piece (swap current piece with hold)
+- **P**: Pause / Resume game
 - **Enter**: Restart (on game over screen)
 - **Space** (with bevy_dev_tools): Toggle UI debug overlay
 
@@ -53,8 +54,10 @@ The game follows Bevy's Entity Component System architecture:
 - `ActiveBlock`: Marks the currently falling tetromino entity
 - `ActiveDot`: Marks individual dots of the active block
 - `BoardDot`: Marks dots that have been placed on the board (stores board_x, board_y coordinates)
+- `GhostDot`: Marks translucent ghost piece dots showing landing preview
 - `Block` (enum): Represents tetromino types (I, O, T, S, Z, J, L) with rotation states and dot positions
 - `Rotation`: Marker component for blocks that can rotate
+- `PauseOverlay`: Marks the pause screen UI overlay
 
 **Resources:**
 - `GameData`: Core game state containing:
@@ -66,11 +69,14 @@ The game follows Bevy's Entity Component System architecture:
   - `score`, `lines_cleared`: Scoring state
   - `held_block`: Currently held piece (Option<Block>)
   - `hold_used`: Whether hold has been used this turn
+  - `lock_delay_timer`: 0.5s timer for lock delay (once mode)
+  - `lock_delay_active`: Whether lock delay is currently counting down
+  - `lock_move_count`: Number of move/rotate resets during lock delay (capped at 15)
 - `Randomizer7Bag`: Implements 7-bag randomizer for block spawning
 
 **States:**
 - `DropType`: Enum with `Normal`, `Hard`, and `Soft` variants, controls drop behavior
-- `GameState`: Enum with `Playing` and `GameOver` variants
+- `GameState`: Enum with `Playing`, `Paused`, and `GameOver` variants
 
 ### Core Systems
 
@@ -80,13 +86,17 @@ Systems run in the `Update` schedule with specific run conditions:
 2. **block_movement_system**: Handles horizontal movement (runs only in Normal/Soft drop state)
 3. **block_rotation_system**: Handles Q/E rotation keys with SRS wall kicks (runs only in Normal/Soft drop state)
 4. **block_drop_type_system**: Switches drop state (Up=Hard, Down=Soft)
-5. **block_drop_system**: Moves block down based on timers, places block when it can't drop further
+5. **block_drop_system**: Moves block down based on timers, initiates lock delay when piece can't drop, places block when lock delay expires. Hard drop bypasses lock delay.
 6. **eliminate_line_system**: Detects and clears completed lines, awards score, moves remaining blocks down (runs in chain after block_drop_system)
 7. **hold_block_system**: Handles C key to swap current piece with held piece
 8. **update_hold_preview_system**: Renders held piece preview in left panel
 9. **update_preview_system**: Renders next 6 pieces in right panel
-10. **game_over_display_system**: Shows game over overlay with score
-11. **restart_system**: Handles Enter key to restart from game over
+10. **update_ghost_piece_system**: Despawns/respawns translucent ghost dots at the landing position of the active piece
+11. **game_over_display_system**: Shows game over overlay with score
+12. **restart_system**: Handles Enter key to restart from game over
+13. **pause_system**: Toggles between Playing and Paused states on P key press
+14. **pause_display_system**: Spawns pause overlay UI (OnEnter Paused)
+15. **unpause_cleanup_system**: Despawns pause overlay (OnExit Paused)
 
 ### Coordinate Systems
 
@@ -134,6 +144,15 @@ When a block can't drop further, `place_block_on_board()`:
 2. Converts ActiveDot components to BoardDot components with board coordinates
 3. Updates board_matrix
 4. Despawns the parent block entity
+5. Resets lock delay state and hold availability
+
+### Lock Delay
+
+When a piece lands (non-hard-drop), a 0.5s lock delay timer starts instead of instant placement. The timer is ticked every frame (independent of the drop timer). Moving or rotating the piece resets the timer, up to 15 resets to prevent infinite stalling. Hard drop bypasses lock delay entirely.
+
+### Ghost Piece
+
+The `update_ghost_piece_system` simulates dropping the active piece from its current position until it can't go further, then spawns translucent (20% opacity) sprites at the landing position. Ghost dots are despawned and recreated every frame.
 
 ## UI
 

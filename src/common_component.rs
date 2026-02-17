@@ -9,6 +9,7 @@ const TIMER_KEYBOARD_SECS: f32 = 0.1;
 const TIMER_DROP_SECS: f32 = 1.0;
 const TIMER_HARD_DROP_SECS: f32 = 0.01;
 const TIMER_SOFT_DROP_SECS: f32 = 0.05;
+const TIMER_LOCK_DELAY_SECS: f32 = 0.5;
 
 #[derive(Resource)]
 pub struct GameData {
@@ -24,6 +25,9 @@ pub struct GameData {
     pub held_block: Option<tetromino::Block>,
     pub hold_used: bool,
     pub level: u32,
+    pub lock_delay_timer: Timer,
+    pub lock_delay_active: bool,
+    pub lock_move_count: u32,
 }
 
 impl Default for GameData {
@@ -41,6 +45,9 @@ impl Default for GameData {
             held_block: None,
             hold_used: false,
             level: 1,
+            lock_delay_timer: Timer::from_seconds(TIMER_LOCK_DELAY_SECS, TimerMode::Once),
+            lock_delay_active: false,
+            lock_move_count: 0,
         }
     }
 }
@@ -57,6 +64,7 @@ pub enum DropType {
 pub enum GameState {
     #[default]
     Playing,
+    Paused,
     GameOver,
 }
 
@@ -83,3 +91,9 @@ pub struct HoldDot;
 
 #[derive(Component)]
 pub struct LevelText;
+
+#[derive(Component)]
+pub struct GhostDot;
+
+#[derive(Component)]
+pub struct PauseOverlay;

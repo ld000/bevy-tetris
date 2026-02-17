@@ -327,47 +327,121 @@ fn place_dot_on_board(board_x: i8, board_y: i8, game_data: &mut ResMut<GameData>
     game_data.board_matrix[board_y as usize][board_x as usize] = 1;
 }
 
+/// Returns kick offset table for SRS (Super Rotation System)
+/// Returns array of (x, y) offsets to try in order
+fn get_kick_offsets(block: &tetromino::Block, from: tetromino::State, to: tetromino::State) -> Vec<(i8, i8)> {
+    match block {
+        tetromino::Block::I { .. } => {
+            // I piece has special kick table
+            match (from, to) {
+                (tetromino::State::Zero, tetromino::State::One) => vec![(0, 0), (-2, 0), (1, 0), (-2, -1), (1, 2)],
+                (tetromino::State::One, tetromino::State::Zero) => vec![(0, 0), (2, 0), (-1, 0), (2, 1), (-1, -2)],
+                (tetromino::State::One, tetromino::State::Two) => vec![(0, 0), (-1, 0), (2, 0), (-1, 2), (2, -1)],
+                (tetromino::State::Two, tetromino::State::One) => vec![(0, 0), (1, 0), (-2, 0), (1, -2), (-2, 1)],
+                (tetromino::State::Two, tetromino::State::Three) => vec![(0, 0), (2, 0), (-1, 0), (2, 1), (-1, -2)],
+                (tetromino::State::Three, tetromino::State::Two) => vec![(0, 0), (-2, 0), (1, 0), (-2, -1), (1, 2)],
+                (tetromino::State::Three, tetromino::State::Zero) => vec![(0, 0), (1, 0), (-2, 0), (1, -2), (-2, 1)],
+                (tetromino::State::Zero, tetromino::State::Three) => vec![(0, 0), (-1, 0), (2, 0), (-1, 2), (2, -1)],
+                _ => vec![(0, 0)],
+            }
+        }
+        tetromino::Block::O { .. } => {
+            // O piece doesn't kick
+            vec![(0, 0)]
+        }
+        _ => {
+            // J, L, T, S, Z pieces use standard kick table
+            match (from, to) {
+                (tetromino::State::Zero, tetromino::State::One) => vec![(0, 0), (-1, 0), (-1, 1), (0, -2), (-1, -2)],
+                (tetromino::State::One, tetromino::State::Zero) => vec![(0, 0), (1, 0), (1, -1), (0, 2), (1, 2)],
+                (tetromino::State::One, tetromino::State::Two) => vec![(0, 0), (1, 0), (1, -1), (0, 2), (1, 2)],
+                (tetromino::State::Two, tetromino::State::One) => vec![(0, 0), (-1, 0), (-1, 1), (0, -2), (-1, -2)],
+                (tetromino::State::Two, tetromino::State::Three) => vec![(0, 0), (1, 0), (1, 1), (0, -2), (1, -2)],
+                (tetromino::State::Three, tetromino::State::Two) => vec![(0, 0), (-1, 0), (-1, -1), (0, 2), (-1, 2)],
+                (tetromino::State::Three, tetromino::State::Zero) => vec![(0, 0), (-1, 0), (-1, -1), (0, 2), (-1, 2)],
+                (tetromino::State::Zero, tetromino::State::Three) => vec![(0, 0), (1, 0), (1, 1), (0, -2), (1, -2)],
+                _ => vec![(0, 0)],
+            }
+        }
+    }
+}
+
 fn block_rotation_system(
     mut commands: Commands,
     keyboard_input: Res<ButtonInput<KeyCode>>,
-    mut block_query: Query<(Entity, &Children, &mut tetromino::Block), With<tetromino::Rotation>>,
+    mut block_query: Query<(Entity, &Children, &mut tetromino::Block, &Transform), With<tetromino::Rotation>>,
+    mut game_data: ResMut<GameData>,
 ) {
-    for (entity, children, mut block) in block_query.iter_mut() {
+    for (entity, children, mut block, transform) in block_query.iter_mut() {
         let mut is_rotation = false;
+        let (from, to);
+        let original_state = block.state().clone();
+
         if keyboard_input.just_pressed(KeyCode::KeyE) {
-            tetromino::Rotation::rotate_right(&mut block);
+            (from, to) = tetromino::Rotation::rotate_right(&mut block);
             is_rotation = true;
-        }
-        if keyboard_input.just_pressed(KeyCode::KeyQ) {
-            tetromino::Rotation::rotate_left(&mut block);
+        } else if keyboard_input.just_pressed(KeyCode::KeyQ) {
+            (from, to) = tetromino::Rotation::rotate_left(&mut block);
             is_rotation = true;
+        } else {
+            continue;
         }
 
         if !is_rotation {
-            return;
+            continue;
         }
 
-        commands.entity(entity).clear_children();
-        children.iter().for_each(|child| {
-            commands.entity(*child).despawn();
-        });
+        // Try rotation with wall kicks
+        let kick_offsets = get_kick_offsets(&block, from, to);
+        let mut successful_kick: Option<(i8, i8)> = None;
 
-        commands.entity(entity).with_children(|parent| {
-            for dot in block.dots_by_state().iter() {
-                parent.spawn((
-                    Sprite {
-                        color: block.color(),
-                        custom_size: Some(Vec2::new(25.0, 25.0)),
-                        ..default()
-                    },
-                    Transform {
-                        translation: Vec3::new(dot.x as f32 * 25.0, -dot.y as f32 * 25.0, 0.0),
-                        ..default()
-                    },
-                    ActiveDot,
-                ));
+        for (kick_x, kick_y) in kick_offsets {
+            let test_x = transform.translation.x + (kick_x as f32 * 25.0);
+            let test_y = transform.translation.y + (kick_y as f32 * 25.0);
+
+            if board_check_block_position(&mut game_data, test_x, test_y, &block) {
+                successful_kick = Some((kick_x, kick_y));
+                break;
             }
-        });
+        }
+
+        if let Some((kick_x, kick_y)) = successful_kick {
+            // Apply the kick offset to the transform
+            commands.entity(entity).insert(Transform {
+                translation: Vec3::new(
+                    transform.translation.x + (kick_x as f32 * 25.0),
+                    transform.translation.y + (kick_y as f32 * 25.0),
+                    transform.translation.z,
+                ),
+                ..transform.clone()
+            });
+
+            // Update visual representation
+            commands.entity(entity).clear_children();
+            children.iter().for_each(|child| {
+                commands.entity(*child).despawn();
+            });
+
+            commands.entity(entity).with_children(|parent| {
+                for dot in block.dots_by_state().iter() {
+                    parent.spawn((
+                        Sprite {
+                            color: block.color(),
+                            custom_size: Some(Vec2::new(25.0, 25.0)),
+                            ..default()
+                        },
+                        Transform {
+                            translation: Vec3::new(dot.x as f32 * 25.0, -dot.y as f32 * 25.0, 0.0),
+                            ..default()
+                        },
+                        ActiveDot,
+                    ));
+                }
+            });
+        } else {
+            // Rotation failed, revert to original state
+            block.set_state(original_state);
+        }
     }
 }
 

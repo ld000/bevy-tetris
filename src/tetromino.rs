@@ -6,11 +6,13 @@ pub struct Dot {
     pub y: i8,
 }
 
+#[derive(PartialEq, Clone, Copy)]
 pub enum State {
     Zero,
     One,
     Two,
     Three,
+    None,
 }
 
 #[derive(Component)]
@@ -53,7 +55,7 @@ pub enum Block {
 }
 
 impl Block {
-    fn state(&self) -> &State {
+    pub fn state(&self) -> &State {
         match self {
             Self::I { state, .. } => state,
             Self::O { state, .. } => state,
@@ -107,6 +109,7 @@ impl Block {
             State::One => self.dots()[1],
             State::Two => self.dots()[2],
             State::Three => self.dots()[3],
+            State::None => unreachable!("State::None should never be used for getting dots"),
         }
     }
 
@@ -346,37 +349,53 @@ impl Block {
 pub struct Rotation;
 
 impl Rotation {
-    pub fn rotate_right(tetromino: &mut Block) {
+    pub fn rotate_right(tetromino: &mut Block) -> (State, State) {
         match tetromino.state() {
             State::Zero => {
                 tetromino.set_state(State::One);
+                (State::Zero, State::One)
             }
             State::One => {
                 tetromino.set_state(State::Two);
+                (State::One, State::Two)
             }
             State::Two => {
                 tetromino.set_state(State::Three);
+                (State::Two, State::Three)
             }
             State::Three => {
                 tetromino.set_state(State::Zero);
+                (State::Three, State::Zero)
             }
+            State::None => {
+                tetromino.set_state(State::None);
+                (State::None, State::None)
+            },
         }
     }
 
-    pub fn rotate_left(tetromino: &mut Block) {
+    pub fn rotate_left(tetromino: &mut Block) -> (State, State) {
         match tetromino.state() {
             State::Zero => {
                 tetromino.set_state(State::Three);
+                (State::Zero, State::Three)
             }
             State::One => {
                 tetromino.set_state(State::Zero);
+                (State::One, State::Zero)
             }
             State::Two => {
                 tetromino.set_state(State::One);
+                (State::Two, State::One)
             }
             State::Three => {
                 tetromino.set_state(State::Two);
+                (State::Three, State::Two)
             }
+            State::None => {
+                tetromino.set_state(State::None);
+                (State::None, State::None)
+            },
         }
     }
 }

@@ -2,6 +2,8 @@
 
 A Tetris game built with the Bevy 0.15.1 game engine, following Guideline Tetris rules.
 
+![Game Screenshot](screenshot.png)
+
 ## Features
 
 - **SRS Wall Kicks**: Full Super Rotation System with kick tables for all piece types

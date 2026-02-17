@@ -47,7 +47,7 @@ pub fn setup_background_grid(mut gizmos: Gizmos) {
     gizmos.grid(
         Isometry3d::from_translation(Vec3::new(0.0, 0.0, 1.0)),
         UVec2::new(10, 20),
-        Vec2::new(25.0, 25.0),
+        Vec2::new(SINGLE_GRID_SIZE, SINGLE_GRID_SIZE),
         LinearRgba::gray(0.05),
     );
 }
@@ -87,15 +87,6 @@ fn spawn_background(
             Transform::from_xyz(-(CENTER_BOX_WIDTH / 2.0 + SIDE_BOX_WIDTH / 2.0), 0.0, 0.0),
         ))
         .with_children(|left| {
-            // left.spawn((
-            //     Text::new("HOLD"),
-            //     TextColor(BLACK.into()),
-            //     TextFont {
-            //         font_size: TITLE_FONT_SIZE,
-            //         ..default()
-            //     },
-            //     // Transform::from_xyz(-(GRID_WIDTH_PX / 2.0 + SIDE_WIDTH_PX / 2.0), 0.0, 0.0),
-            // ));
             left.spawn((
                 Mesh2d(meshes.add(Rectangle::new(SIDE_INNER_BOX_WIDTH, HOLD_BOX_HEIGHT))),
                 MeshMaterial2d(materials.add(INNER_WINDOW_COLOR)),

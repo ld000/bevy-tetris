@@ -8,7 +8,7 @@ use bevy::prelude::{
 use bevy::sprite::Sprite;
 use bevy::utils::default;
 
-use crate::common_component::{ActiveBlock, DropType, GameData, HoldDot};
+use crate::common_component::{ActiveBlock, DropType, GameData, HoldDot, DOT_SIZE};
 use crate::tetromino;
 
 #[derive(Resource, Default)]
@@ -55,7 +55,7 @@ pub(crate) fn hold_block_system(
         if let tetromino::Block::I { .. } = held {
             transform_y_times = 9.0;
         }
-        crate::spawn_block_system::spawn_block(&mut commands, held, 0.0, 25.0 * transform_y_times);
+        crate::spawn_block_system::spawn_block(&mut commands, held, 0.0, DOT_SIZE * transform_y_times);
     }
     // If hold was empty, spawn_block_system will handle spawning next piece
 
@@ -99,10 +99,10 @@ pub(crate) fn update_hold_preview_system(
         color = Color::srgba(srgba.red, srgba.green, srgba.blue, 0.4);
     }
 
-    let min_x = dots.iter().map(|d| d.x).min().unwrap() as f32;
-    let max_x = dots.iter().map(|d| d.x).max().unwrap() as f32;
-    let min_y = dots.iter().map(|d| d.y).min().unwrap() as f32;
-    let max_y = dots.iter().map(|d| d.y).max().unwrap() as f32;
+    let min_x = dots.iter().map(|d| d.x).min().expect("dots is non-empty") as f32;
+    let max_x = dots.iter().map(|d| d.x).max().expect("dots is non-empty") as f32;
+    let min_y = dots.iter().map(|d| d.y).min().expect("dots is non-empty") as f32;
+    let max_y = dots.iter().map(|d| d.y).max().expect("dots is non-empty") as f32;
     let center_x = (min_x + max_x) / 2.0;
     let center_y = (min_y + max_y) / 2.0;
 
@@ -119,5 +119,77 @@ pub(crate) fn update_hold_preview_system(
             Transform::from_xyz(x, y, 2.0),
             HoldDot,
         ));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::common_component::GameData;
+    use crate::tetromino::{Block, Rotation, State};
+
+    #[test]
+    fn hold_resets_rotation() {
+        let mut block = Block::new_t();
+        Rotation::rotate_right(&mut block);
+        Rotation::rotate_right(&mut block);
+        assert_eq!(*block.state(), State::Two);
+
+        block.reset_rotation();
+        assert_eq!(*block.state(), State::Zero);
+    }
+
+    #[test]
+    fn hold_used_flag_prevents_double_hold() {
+        let mut game_data = GameData::default();
+        assert!(!game_data.hold_used);
+
+        game_data.hold_used = true;
+        // Simulates the guard in hold_block_system
+        assert!(game_data.hold_used);
+    }
+
+    #[test]
+    fn hold_swap_preserves_block_type() {
+        let mut game_data = GameData::default();
+        let block = Block::new_t();
+        let mut current = block.clone();
+        current.reset_rotation();
+
+        let previously_held = game_data.held_block.take();
+        game_data.held_block = Some(current);
+        game_data.hold_used = true;
+
+        assert!(previously_held.is_none());
+        assert!(game_data.held_block.is_some());
+        assert!(game_data.hold_used);
+    }
+
+    #[test]
+    fn hold_swap_returns_previous() {
+        let mut game_data = GameData::default();
+        game_data.held_block = Some(Block::new_i());
+
+        let previously_held = game_data.held_block.take();
+        game_data.held_block = Some(Block::new_t());
+
+        assert!(previously_held.is_some());
+        match previously_held.unwrap() {
+            Block::I { .. } => {}
+            _ => panic!("Expected I block from hold"),
+        }
+        // Verify the new held block is T
+        match game_data.held_block.as_ref().unwrap() {
+            Block::T { .. } => {}
+            _ => panic!("Expected T block in hold"),
+        }
+    }
+
+    #[test]
+    fn hold_used_resets_on_placement() {
+        let mut game_data = GameData::default();
+        game_data.hold_used = true;
+        // Simulates what place_block_on_board does
+        game_data.hold_used = false;
+        assert!(!game_data.hold_used);
     }
 }

@@ -17,6 +17,7 @@ use crate::ghost::GhostTracker;
 use crate::hold::HoldTracker;
 use crate::spawn_block_system::Randomizer7Bag;
 
+#[allow(clippy::type_complexity)]
 pub(crate) fn update_score_display(
     game_data: Res<GameData>,
     mut score_query: Query<&mut Text, With<ScoreText>>,
@@ -85,6 +86,7 @@ pub(crate) fn game_over_display_system(mut commands: Commands, game_data: Res<Ga
         });
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn restart_system(
     mut commands: Commands,
     keyboard_input: Res<ButtonInput<KeyCode>>,

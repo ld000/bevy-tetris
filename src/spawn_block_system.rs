@@ -14,7 +14,7 @@ use rand::seq::SliceRandom;
 
 use crate::{
     board::board_check_block_position,
-    common_component::{ActiveBlock, ActiveDot, DropType, GameData, GameState, PreviewDot},
+    common_component::{ActiveBlock, ActiveDot, DropType, GameData, GameState, PreviewDot, DOT_SIZE, SPAWN_X},
     tetromino,
 };
 
@@ -52,7 +52,8 @@ impl Default for Randomizer7Bag {
 
 impl Randomizer7Bag {
     pub fn pop_next(&mut self) -> tetromino::Block {
-        let block = self.queue.pop_front().unwrap();
+        let block = self.queue.pop_front()
+            .expect("randomizer queue should never be empty");
         self.ensure_minimum();
         block
     }
@@ -86,8 +87,8 @@ pub fn spawn_block_system(
         transform_y_times = 9.0
     };
 
-    let spawn_x = -25.0 * 1.5;
-    let spawn_y = 25.0 * 1.5 + 25.0 * transform_y_times;
+    let spawn_x = SPAWN_X;
+    let spawn_y = DOT_SIZE * 1.5 + DOT_SIZE * transform_y_times;
 
     if !board_check_block_position(&game_data.board_matrix, spawn_x, spawn_y, &block) {
         game_state.set(GameState::GameOver);
@@ -96,7 +97,7 @@ pub fn spawn_block_system(
 
     state.set(DropType::Normal);
     game_data.drop_timer.reset();
-    spawn_block(&mut commands, block, 0.0, 25.0 * transform_y_times);
+    spawn_block(&mut commands, block, 0.0, DOT_SIZE * transform_y_times);
 }
 
 pub fn spawn_block(
@@ -115,7 +116,7 @@ pub fn spawn_block(
                 ..default()
             },
             Transform {
-                translation: Vec3::new(-25.0 * 1.5 + transform_x, 25.0 * 1.5 + transform_y, 1.0),
+                translation: Vec3::new(SPAWN_X + transform_x, DOT_SIZE * 1.5 + transform_y, 1.0),
                 ..default()
             },
             block,
@@ -127,11 +128,11 @@ pub fn spawn_block(
                 parent.spawn((
                     Sprite {
                         color,
-                        custom_size: Some(Vec2::new(25.0, 25.0)),
+                        custom_size: Some(Vec2::new(DOT_SIZE, DOT_SIZE)),
                         ..default()
                     },
                     Transform {
-                        translation: Vec3::new(dot.x as f32 * 25.0, -dot.y as f32 * 25.0, 0.0),
+                        translation: Vec3::new(dot.x as f32 * DOT_SIZE, -dot.y as f32 * DOT_SIZE, 0.0),
                         ..default()
                     },
                     ActiveDot,
@@ -164,10 +165,10 @@ pub fn update_preview_system(
         let dots = block.dots_by_state();
         let color = block.color();
 
-        let min_x = dots.iter().map(|d| d.x).min().unwrap() as f32;
-        let max_x = dots.iter().map(|d| d.x).max().unwrap() as f32;
-        let min_y = dots.iter().map(|d| d.y).min().unwrap() as f32;
-        let max_y = dots.iter().map(|d| d.y).max().unwrap() as f32;
+        let min_x = dots.iter().map(|d| d.x).min().expect("dots is non-empty") as f32;
+        let max_x = dots.iter().map(|d| d.x).max().expect("dots is non-empty") as f32;
+        let min_y = dots.iter().map(|d| d.y).min().expect("dots is non-empty") as f32;
+        let max_y = dots.iter().map(|d| d.y).max().expect("dots is non-empty") as f32;
         let center_x = (min_x + max_x) / 2.0;
         let center_y = (min_y + max_y) / 2.0;
 

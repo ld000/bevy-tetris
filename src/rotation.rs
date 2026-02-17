@@ -5,7 +5,7 @@ use bevy::prelude::{
 };
 
 use crate::board::board_check_block_position;
-use crate::common_component::{ActiveDot, GameData};
+use crate::common_component::{ActiveDot, GameData, DOT_SIZE, MAX_LOCK_RESETS};
 use crate::tetromino;
 
 /// Returns kick offset table for SRS (Super Rotation System)
@@ -75,8 +75,8 @@ pub(crate) fn block_rotation_system(
         let mut successful_kick: Option<(i8, i8)> = None;
 
         for (kick_x, kick_y) in kick_offsets {
-            let test_x = transform.translation.x + (kick_x as f32 * 25.0);
-            let test_y = transform.translation.y + (kick_y as f32 * 25.0);
+            let test_x = transform.translation.x + (kick_x as f32 * DOT_SIZE);
+            let test_y = transform.translation.y + (kick_y as f32 * DOT_SIZE);
 
             if board_check_block_position(&game_data.board_matrix, test_x, test_y, &block) {
                 successful_kick = Some((kick_x, kick_y));
@@ -88,8 +88,8 @@ pub(crate) fn block_rotation_system(
             // Apply the kick offset to the transform
             commands.entity(entity).insert(Transform {
                 translation: Vec3::new(
-                    transform.translation.x + (kick_x as f32 * 25.0),
-                    transform.translation.y + (kick_y as f32 * 25.0),
+                    transform.translation.x + (kick_x as f32 * DOT_SIZE),
+                    transform.translation.y + (kick_y as f32 * DOT_SIZE),
                     transform.translation.z,
                 ),
                 ..*transform
@@ -100,8 +100,8 @@ pub(crate) fn block_rotation_system(
             for (i, child) in children.iter().enumerate() {
                 if let Ok(mut child_transform) = child_query.get_mut(*child) {
                     child_transform.translation = Vec3::new(
-                        new_dots[i].x as f32 * 25.0,
-                        -new_dots[i].y as f32 * 25.0,
+                        new_dots[i].x as f32 * DOT_SIZE,
+                        -new_dots[i].y as f32 * DOT_SIZE,
                         0.0,
                     );
                 }
@@ -110,7 +110,7 @@ pub(crate) fn block_rotation_system(
             // Reset lock delay on successful rotation (up to 15 resets)
             if game_data.lock_delay_active {
                 game_data.lock_move_count += 1;
-                if game_data.lock_move_count < 15 {
+                if game_data.lock_move_count < MAX_LOCK_RESETS {
                     game_data.lock_delay_timer.reset();
                 }
             }

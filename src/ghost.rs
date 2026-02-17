@@ -5,7 +5,7 @@ use bevy::utils::default;
 use bevy::color::Color;
 
 use crate::board::board_check_block_position;
-use crate::common_component::{ActiveBlock, GameData, GhostDot};
+use crate::common_component::{ActiveBlock, GameData, GhostDot, DOT_SIZE};
 use crate::tetromino;
 
 #[derive(Resource, Default)]
@@ -38,10 +38,10 @@ pub(crate) fn update_ghost_piece_system(
     while board_check_block_position(
         &game_data.board_matrix,
         transform.translation.x,
-        ghost_y - 25.0,
+        ghost_y - DOT_SIZE,
         block,
     ) {
-        ghost_y -= 25.0;
+        ghost_y -= DOT_SIZE;
     }
 
     let current_state = *block.state();
@@ -75,13 +75,13 @@ pub(crate) fn update_ghost_piece_system(
     let ghost_color = Color::srgba(srgba.red, srgba.green, srgba.blue, 0.2);
 
     for dot in block.dots_by_state().iter() {
-        let x = transform.translation.x + dot.x as f32 * 25.0;
-        let y = ghost_y + (-dot.y as f32) * 25.0;
+        let x = transform.translation.x + dot.x as f32 * DOT_SIZE;
+        let y = ghost_y + (-dot.y as f32) * DOT_SIZE;
 
         commands.spawn((
             Sprite {
                 color: ghost_color,
-                custom_size: Some(Vec2::new(25.0, 25.0)),
+                custom_size: Some(Vec2::new(DOT_SIZE, DOT_SIZE)),
                 ..default()
             },
             Transform::from_xyz(x, y, 0.5),

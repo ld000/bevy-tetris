@@ -7,13 +7,13 @@ use bevy::prelude::NextState;
 use bevy::time::Time;
 
 use crate::board::{board_check_block_position, get_object_position_in_board, place_dot_on_board, BoardDot};
-use crate::common_component::{ActiveBlock, ActiveDot, DropType, GameData};
+use crate::common_component::{ActiveBlock, ActiveDot, DropType, GameData, DOT_SIZE, GRAVITY_FLOOR};
 use crate::tetromino;
 
 pub(crate) fn gravity_seconds(level: u32) -> f32 {
     let l = level as f32;
     let base = (0.8 - ((l - 1.0) * 0.007)).max(0.0);
-    base.powf(l - 1.0).max(0.05)
+    base.powf(l - 1.0).max(GRAVITY_FLOOR)
 }
 
 pub(crate) fn block_drop_type_system(
@@ -65,12 +65,13 @@ pub(crate) fn block_drop_system(
         let can_drop = board_check_block_position(
             &game_data.board_matrix,
             transform.translation.x,
-            transform.translation.y - 25.0,
+            transform.translation.y - DOT_SIZE,
             block,
         );
         if can_drop {
             // Piece is no longer on the ground — cancel lock delay, resume normal drop
             game_data.lock_delay_active = false;
+            game_data.lock_move_count = 0;
         } else {
             game_data.lock_delay_timer.tick(time.delta());
             if game_data.lock_delay_timer.finished() {
@@ -111,12 +112,12 @@ pub(crate) fn block_drop_system(
     let can_drop = board_check_block_position(
         &game_data.board_matrix,
         transform.translation.x,
-        transform.translation.y - 25.0,
+        transform.translation.y - DOT_SIZE,
         block,
     );
 
     if can_drop {
-        transform.translation.y -= 25.0;
+        transform.translation.y -= DOT_SIZE;
         if state.get() == &DropType::Soft {
             game_data.soft_drop_cells += 1;
         }
@@ -149,7 +150,7 @@ fn place_block_on_board(
     // Calculate hard drop score
     if let Some(start_y) = game_data.hard_drop_start_y {
         let current_y = transform.translation.y;
-        let cells_dropped = ((start_y - current_y) / 25.0).round() as u32;
+        let cells_dropped = ((start_y - current_y) / DOT_SIZE).round() as u32;
         game_data.score += cells_dropped * 2;
         game_data.hard_drop_start_y = None;
     }
@@ -163,7 +164,8 @@ fn place_block_on_board(
     children.iter().for_each(|child| {
         commands.entity(*child).remove_parent_in_place();
 
-        let child_global_transform = children_query.get(*child).unwrap();
+        let child_global_transform = children_query.get(*child)
+            .expect("active dot child should have GlobalTransform");
         let (board_x, board_y) = get_object_position_in_board(
             child_global_transform.translation().x,
             child_global_transform.translation().y,
@@ -209,11 +211,10 @@ mod tests {
 
     #[test]
     fn gravity_has_floor() {
-        // Even at very high levels, gravity shouldn't go below 0.05
         for level in [20, 50, 100, 1000] {
             assert!(
-                gravity_seconds(level) >= 0.05,
-                "Gravity at level {level} should be >= 0.05, got {}",
+                gravity_seconds(level) >= GRAVITY_FLOOR,
+                "Gravity at level {level} should be >= {GRAVITY_FLOOR}, got {}",
                 gravity_seconds(level)
             );
         }

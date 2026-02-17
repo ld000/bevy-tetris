@@ -5,7 +5,13 @@ use bevy::{
 
 use crate::tetromino;
 
-const TIMER_KEYBOARD_SECS: f32 = 0.1;
+pub const DOT_SIZE: f32 = 25.0;
+pub const BOARD_COLS: usize = 10;
+pub const BOARD_ROWS: usize = 20;
+pub const SPAWN_X: f32 = -DOT_SIZE * 1.5;
+pub const MAX_LOCK_RESETS: u32 = 15;
+pub const GRAVITY_FLOOR: f32 = 0.05;
+
 const TIMER_DROP_SECS: f32 = 1.0;
 const TIMER_HARD_DROP_SECS: f32 = 0.01;
 const TIMER_SOFT_DROP_SECS: f32 = 0.05;
@@ -13,8 +19,7 @@ const TIMER_LOCK_DELAY_SECS: f32 = 0.5;
 
 #[derive(Resource)]
 pub struct GameData {
-    pub board_matrix: [[i8; 10]; 20],
-    pub keyboard_timer: Timer,
+    pub board_matrix: [[i8; BOARD_COLS]; BOARD_ROWS],
     pub drop_timer: Timer,
     pub hard_drop_timer: Timer,
     pub soft_drop_timer: Timer,
@@ -33,8 +38,7 @@ pub struct GameData {
 impl Default for GameData {
     fn default() -> Self {
         Self {
-            board_matrix: [[0; 10]; 20],
-            keyboard_timer: Timer::from_seconds(TIMER_KEYBOARD_SECS, TimerMode::Repeating),
+            board_matrix: [[0; BOARD_COLS]; BOARD_ROWS],
             drop_timer: Timer::from_seconds(TIMER_DROP_SECS, TimerMode::Repeating),
             hard_drop_timer: Timer::from_seconds(TIMER_HARD_DROP_SECS, TimerMode::Repeating),
             soft_drop_timer: Timer::from_seconds(TIMER_SOFT_DROP_SECS, TimerMode::Repeating),

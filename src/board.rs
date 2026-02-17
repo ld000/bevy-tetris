@@ -1,5 +1,6 @@
 use bevy::prelude::Component;
 
+use crate::common_component::{BOARD_COLS, BOARD_ROWS, DOT_SIZE};
 use crate::tetromino;
 
 #[derive(Component, Debug)]
@@ -10,15 +11,15 @@ pub(crate) struct BoardDot {
 
 pub(crate) fn get_object_position_in_board(x: f32, y: f32) -> (i8, i8) {
     let board_x: i8 = if x < 0.0 {
-        (4.0 - (x.abs() / 25.0 - 0.5)) as i8
+        (4.0 - (x.abs() / DOT_SIZE - 0.5)) as i8
     } else {
-        (5.0 + (x / 25.0 - 0.5)) as i8
+        (5.0 + (x / DOT_SIZE - 0.5)) as i8
     };
 
     let board_y: i8 = if y < 0.0 {
-        (10.0 + (y.abs() / 25.0 - 0.5)) as i8
+        (10.0 + (y.abs() / DOT_SIZE - 0.5)) as i8
     } else {
-        (9.0 - (y / 25.0 - 0.5)) as i8
+        (9.0 - (y / DOT_SIZE - 0.5)) as i8
     };
 
     (board_x, board_y)
@@ -42,7 +43,7 @@ pub(crate) fn get_dot_position_in_board(x: f32, y: f32, dot_x: i8, dot_y: i8) ->
 /// | 19,0 | 19,1 | 19,2 | ... | 19,9 |
 /// -----------------------------------
 pub(crate) fn board_check_block_position(
-    board: &[[i8; 10]; 20],
+    board: &[[i8; BOARD_COLS]; BOARD_ROWS],
     x: f32,
     y: f32,
     block: &tetromino::Block,
@@ -51,7 +52,7 @@ pub(crate) fn board_check_block_position(
     for dot in dots.iter() {
         let (board_x, board_y) = get_dot_position_in_board(x, y, dot.x, dot.y);
 
-        if !(0..=9).contains(&board_x) || !(0..=19).contains(&board_y) {
+        if !(0..BOARD_COLS as i8).contains(&board_x) || !(0..BOARD_ROWS as i8).contains(&board_y) {
             return false;
         }
 
@@ -63,7 +64,7 @@ pub(crate) fn board_check_block_position(
     true
 }
 
-pub(crate) fn place_dot_on_board(board_x: i8, board_y: i8, board: &mut [[i8; 10]; 20]) {
+pub(crate) fn place_dot_on_board(board_x: i8, board_y: i8, board: &mut [[i8; BOARD_COLS]; BOARD_ROWS]) {
     board[board_y as usize][board_x as usize] = 1;
 }
 
@@ -71,6 +72,7 @@ pub(crate) fn place_dot_on_board(board_x: i8, board_y: i8, board: &mut [[i8; 10]
 mod tests {
     use super::*;
     use crate::tetromino::Block;
+    use crate::common_component::{BOARD_COLS, BOARD_ROWS};
 
     #[test]
     fn object_position_center() {
@@ -107,7 +109,7 @@ mod tests {
 
     #[test]
     fn check_block_position_empty_board_valid() {
-        let board = [[0i8; 10]; 20];
+        let board = [[0i8; BOARD_COLS]; BOARD_ROWS];
         let block = Block::new_t();
         // Default spawn position
         assert!(board_check_block_position(&board, -37.5, 237.5, &block));
@@ -115,7 +117,7 @@ mod tests {
 
     #[test]
     fn check_block_position_out_of_bounds() {
-        let board = [[0i8; 10]; 20];
+        let board = [[0i8; BOARD_COLS]; BOARD_ROWS];
         let block = Block::new_i();
         // Way off the left side
         assert!(!board_check_block_position(&board, -500.0, 0.0, &block));
@@ -123,9 +125,9 @@ mod tests {
 
     #[test]
     fn check_block_position_collision() {
-        let mut board = [[0i8; 10]; 20];
+        let mut board = [[0i8; BOARD_COLS]; BOARD_ROWS];
         // Fill bottom row
-        board[19] = [1; 10];
+        board[19] = [1; BOARD_COLS];
         let block = Block::new_o();
         // Try to place at bottom — should collide
         assert!(!board_check_block_position(&board, -37.5, -237.5, &block));
@@ -133,7 +135,7 @@ mod tests {
 
     #[test]
     fn place_dot_sets_cell() {
-        let mut board = [[0i8; 10]; 20];
+        let mut board = [[0i8; BOARD_COLS]; BOARD_ROWS];
         place_dot_on_board(3, 5, &mut board);
         assert_eq!(board[5][3], 1);
     }

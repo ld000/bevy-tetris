@@ -12,7 +12,6 @@ pub enum State {
     One,
     Two,
     Three,
-    None,
 }
 
 #[derive(Component, Clone)]
@@ -113,7 +112,6 @@ impl Block {
             State::One => self.dots()[1],
             State::Two => self.dots()[2],
             State::Three => self.dots()[3],
-            State::None => unreachable!("State::None should never be used for getting dots"),
         }
     }
 
@@ -371,10 +369,6 @@ impl Rotation {
                 tetromino.set_state(State::Zero);
                 (State::Three, State::Zero)
             }
-            State::None => {
-                tetromino.set_state(State::None);
-                (State::None, State::None)
-            },
         }
     }
 
@@ -396,10 +390,6 @@ impl Rotation {
                 tetromino.set_state(State::Two);
                 (State::Three, State::Two)
             }
-            State::None => {
-                tetromino.set_state(State::None);
-                (State::None, State::None)
-            },
         }
     }
 }

@@ -9,6 +9,7 @@ mod line_clear;
 mod movement;
 mod rotation;
 mod spawn_block_system;
+mod start_screen;
 mod tetromino;
 
 use bevy::app::{PreStartup, Update};
@@ -47,6 +48,8 @@ fn main() {
     .init_resource::<Randomizer7Bag>()
     .init_state::<DropType>()
     .init_state::<GameState>()
+    .add_systems(bevy::prelude::OnEnter(GameState::StartScreen), start_screen::start_screen_display_system)
+    .add_systems(Update, start_screen::start_screen_input_system.run_if(in_state(GameState::StartScreen)))
     .add_systems(Update, (spawn_block_system, update_preview_system).chain().run_if(in_state(GameState::Playing)))
     .add_systems(
         Update,

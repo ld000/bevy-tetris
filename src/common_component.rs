@@ -67,10 +67,14 @@ pub enum DropType {
 #[derive(States, Debug, Clone, Eq, PartialEq, Hash, Default)]
 pub enum GameState {
     #[default]
+    StartScreen,
     Playing,
     Paused,
     GameOver,
 }
+
+#[derive(Component)]
+pub struct StartScreenOverlay;
 
 #[derive(Component)]
 pub struct ActiveBlock;

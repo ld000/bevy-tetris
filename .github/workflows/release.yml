@@ -20,7 +20,7 @@ jobs:
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             artifact: bevy-tetris-windows-x86_64.zip
-          - os: macos-13
+          - os: macos-latest
             target: x86_64-apple-darwin
             artifact: bevy-tetris-macos-x86_64.tar.gz
           - os: macos-14

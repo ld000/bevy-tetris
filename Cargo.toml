@@ -4,9 +4,12 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-bevy = {version = "0.15.1", features = ["bevy_dev_tools"]}
+bevy = {version = "0.15.1", features = ["bevy_dev_tools", "webgl2"]}
 bevy_egui = "0.32.0"
 rand = "0.8.5"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.3", features = ["wasm_js"] }
 
 [features]
 bevy_dev_tools = ["bevy/bevy_dev_tools"]

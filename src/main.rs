@@ -32,6 +32,10 @@ fn main() {
             title: "Tetris".to_string(),
             resolution: (800.0, 600.0).into(),
             resizable: false,
+            #[cfg(target_arch = "wasm32")]
+            canvas: Some("#bevy-canvas".to_owned()),
+            #[cfg(target_arch = "wasm32")]
+            prevent_default_event_handling: false,
             ..Default::default()
         }),
         ..default()

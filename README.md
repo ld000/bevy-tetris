@@ -35,7 +35,7 @@ cargo run --release
 
 ## Building & Packaging
 
-**WASM（浏览器）**
+**WASM(Browser)**
 ```bash
 trunk build --release
 zip -r bevy-tetris-wasm.zip dist/
@@ -55,11 +55,16 @@ cargo build --release --target aarch64-apple-darwin
 tar -czf bevy-tetris-macos-aarch64.tar.gz -C target/aarch64-apple-darwin/release bevy-tetris
 ```
 
-**Linux / Windows**: 交叉编译依赖复杂，推荐通过 GitHub Actions 自动构建。推送 `v*` tag 即可触发全平台打包并生成 Release：
-
+**Linux**
 ```bash
-git tag v1.0.0
-git push origin v1.0.0
+cargo build --release --target x86_64-unknown-linux-gnu
+tar -czf bevy-tetris.tar.gz -C target/x86_64-unknown-linux-gnu/release bevy-tetris
+```
+
+**Windows**
+```bash
+rustup target add x86_64-pc-windows-msvc
+cargo build --release --target x86_64-pc-windows-msvc
 ```
 
 ## Controls
@@ -115,6 +120,3 @@ src/
 
 - High score persistence
 
-## License
-
-[Add your license here]

@@ -1,0 +1,92 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-native:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact: bevy-tetris-linux-x86_64.tar.gz
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact: bevy-tetris-windows-x86_64.zip
+          - os: macos-13
+            target: x86_64-apple-darwin
+            artifact: bevy-tetris-macos-x86_64.tar.gz
+          - os: macos-14
+            target: aarch64-apple-darwin
+            artifact: bevy-tetris-macos-aarch64.tar.gz
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+      - name: Install Linux dependencies
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libudev-dev \
+            libwayland-dev libxkbcommon-dev pkg-config \
+            libx11-dev libxcursor-dev libxi-dev libxrandr-dev
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }}
+      - name: Package (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: tar -czf ${{ matrix.artifact }} -C target/${{ matrix.target }}/release bevy-tetris
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        run: Compress-Archive -Path target\${{ matrix.target }}\release\bevy-tetris.exe -DestinationPath ${{ matrix.artifact }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.artifact }}
+
+  build-wasm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - uses: jetli/trunk-action@v0.5.0
+        with:
+          version: latest
+      - name: Build WASM
+        run: trunk build --release
+      - name: Package WASM
+        run: zip -r bevy-tetris-wasm.zip dist/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bevy-tetris-wasm.zip
+          path: bevy-tetris-wasm.zip
+
+  release:
+    needs: [build-native, build-wasm]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            bevy-tetris-linux-x86_64.tar.gz
+            bevy-tetris-windows-x86_64.zip
+            bevy-tetris-macos-x86_64.tar.gz
+            bevy-tetris-macos-aarch64.tar.gz
+            bevy-tetris-wasm.zip

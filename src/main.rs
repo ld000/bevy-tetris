@@ -16,11 +16,12 @@ use bevy::app::{PreStartup, Update};
 #[cfg(feature = "bevy_dev_tools")]
 use bevy::prelude::info_once;
 use bevy::prelude::{
-    in_state, AppExtStates, Condition, IntoSystemConfigs, PluginGroup, Res,
+    in_state, AppExtStates, Condition, IntoSystemConfigs, PluginGroup,
 };
 use bevy::utils::default;
 use bevy::window::Window;
 use bevy::{app::App, window::WindowPlugin, DefaultPlugins};
+#[cfg(debug_assertions)]
 use bevy_egui::{egui, EguiContexts, EguiPlugin};
 use common_component::{DropType, GameData, GameState};
 use spawn_block_system::{spawn_block_system, update_preview_system, Randomizer7Bag};
@@ -40,8 +41,6 @@ fn main() {
         }),
         ..default()
     }))
-    .add_plugins(EguiPlugin)
-    .add_systems(Update, ui_example_system)
     .add_systems(Update, game_state::update_score_display)
     .add_systems(Update, hold::update_hold_preview_system)
     .init_resource::<GameData>()
@@ -77,6 +76,10 @@ fn main() {
     .add_systems(bevy::prelude::OnEnter(GameState::GameOver), game_state::game_over_display_system)
     .add_systems(Update, game_state::restart_system.run_if(in_state(GameState::GameOver)));
 
+    #[cfg(debug_assertions)]
+    app.add_plugins(EguiPlugin)
+        .add_systems(Update, ui_example_system);
+
     #[cfg(feature = "bevy_dev_tools")]
     {
         app.add_plugins(bevy::dev_tools::ui_debug_overlay::DebugUiPlugin)
@@ -86,6 +89,7 @@ fn main() {
     app.run();
 }
 
+#[cfg(debug_assertions)]
 fn ui_example_system(mut contexts: EguiContexts, game_data: Res<GameData>) {
     egui::Window::new("Hello").show(contexts.ctx_mut(), |ui| {
         for line in game_data.board_matrix.iter() {
